@@ -43,7 +43,7 @@ jobs:
           push: true
           tags: ${{ steps.ecr.outputs.registry }}/indig-payment:${{ github.sha }}   # ★ 커밋 SHA — latest 금지
 
-      # 매니페스트 레포의 이미지 태그를 고쳐 main 에 직접 커밋 → ArgoCD 가 배포 (보호 규칙은 이 deploy key 만 bypass)
+      # 매니페스트 레포의 이미지 태그를 고쳐 main 에 직접 커밋 → ArgoCD 가 배포 (main 룰셋 없음 · 쓰기 권한은 이 deploy key 만)
       - uses: actions/checkout@v4
         with:
           repository: SW-Team07-2026-2/manifests
