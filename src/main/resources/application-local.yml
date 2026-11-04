@@ -1,0 +1,16 @@
+spring:
+  # 로컬 시크릿도 운영과 같은 방식 — ./local-secrets/ 의 파일 이름이 프로퍼티 키 (../local/setup-secrets.sh)
+  config.import: optional:configtree:./local-secrets/
+  # 🔴 로컬 DB 도 payment_svc 유저로 붙습니다 (postgres 수퍼유저면 스키마 경계 위반이 로컬에서 통과합니다)
+  datasource.url: jdbc:postgresql://localhost:5432/indie_db?currentSchema=payment&ApplicationName=payment
+  # 로컬은 엔티티가 테이블을 만듭니다. 운영은 Flyway(V1__payment_schema.sql) + validate — 둘의 일치는 PaymentSchemaTest 가 확인합니다
+  flyway.enabled: false
+  jpa.hibernate.ddl-auto: update
+  kafka.bootstrap-servers: localhost:9092
+
+springdoc:
+  api-docs.enabled: true
+  swagger-ui.enabled: true                    # http://localhost:8084/swagger-ui.html
+
+logging:
+  pattern.console: "%d{HH:mm:ss.SSS} %-5level [%X{correlationId:-}] %logger{36} - %msg%n"

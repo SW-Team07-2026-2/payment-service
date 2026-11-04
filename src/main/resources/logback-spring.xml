@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- 로컬 — 사람이 읽는 한 줄 -->
+    <springProfile name="local">
+        <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+        <root level="INFO"><appender-ref ref="CONSOLE"/></root>
+    </springProfile>
+
+    <!-- 그 외 — JSON 1줄 + correlationId. 🔴 토큰 · 쿠키 · Set-Cookie 는 마스킹 -->
+    <springProfile name="!local">
+        <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <includeMdcKeyName>correlationId</includeMdcKeyName>
+                <jsonGeneratorDecorator class="net.logstash.logback.mask.MaskingJsonGeneratorDecorator">
+                    <defaultMask>****</defaultMask>
+                    <path>cookie</path>
+                    <path>set-cookie</path>
+                    <path>authorization</path>
+                    <value>eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+</value>
+                    <value>(?i)(AT|RT|XSRF-TOKEN)=[^;\s]+</value>
+                </jsonGeneratorDecorator>
+            </encoder>
+        </appender>
+        <root level="INFO"><appender-ref ref="JSON"/></root>
+    </springProfile>
+</configuration>

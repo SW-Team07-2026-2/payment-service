@@ -1,0 +1,76 @@
+spring:
+  application.name: payment
+  config.import: optional:configtree:/etc/secrets/
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST}:5432/indie_db?currentSchema=payment&ApplicationName=payment
+    username: payment_svc
+    password: ${db.password}                  # ← configtree 파일
+    hikari:
+      maximum-pool-size: 5                    # ★ DB 쪽 CONNECTION LIMIT 15 / replica 2 (11 §9)
+      minimum-idle: 2
+      connection-timeout: 3000
+      max-lifetime: 1500000                   # 25분 — RDS 쪽보다 짧게
+      leak-detection-threshold: 20000
+
+  jpa:
+    open-in-view: false                       # ★ 커넥션 점유 방지
+    hibernate.ddl-auto: validate              # 🔴 none/update 아님 — Flyway 와 불일치를 잡는다 (로컬만 update)
+    properties:
+      hibernate:
+        default_schema: payment
+        query.in_clause_parameter_padding: true
+
+  flyway:
+    enabled: true
+    schemas: payment
+    default-schema: payment
+    baseline-on-migrate: false                # 🔴 true 는 기존 테이블을 조용히 건너뜁니다
+    validate-on-migrate: true
+
+  kafka:                                      # 발행만 — 구독하는 토픽이 없습니다
+    bootstrap-servers: ${KAFKA_SERVERS}
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 1
+        max.block.ms: 3000                    # Kafka 장애 시 릴레이 스레드가 60초씩 묶이지 않게
+
+server:
+  port: 8084
+  shutdown: graceful
+  tomcat.threads.max: 50
+
+management:
+  server.port: 8094
+  endpoints.web.exposure.include: health,info,prometheus
+  endpoint.health:
+    probes.enabled: true
+    group:
+      readiness.include: db
+      liveness.include: ping
+
+springdoc:
+  api-docs.enabled: false                     # 운영 노출 안 함 — local 에서만 켭니다
+  swagger-ui.enabled: false
+
+app:
+  internal:
+    expected-audience: payment
+    allowed-issuers: [catalog, concert]       # 결제 준비 · 취소를 부르는 쪽 (11 §7)
+    clock-skew-seconds: 30
+  payment:
+    ttl-minutes: 15                           # prepare 후 이 시간 안에 confirm 해야 합니다 (Catalog 주문 만료와 같은 값)
+  toss:                                       # 시크릿 키는 /etc/secrets/toss.secret-key (test_… 만 — TossPaymentGateway)
+    base-url: https://api.tosspayments.com
+    connect-timeout-ms: 3000
+    read-timeout-ms: 10000                    # Concert claim-seconds(30) 보다 짧게 — 좌석 잠금이 풀리기 전에 승인 결과가 남습니다
+  page:
+    size: 20
+    max-size: 50
+  outbox:
+    relay-interval-ms: 1000
+    batch-size: 100
