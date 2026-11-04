@@ -26,7 +26,8 @@ import java.util.Date;
 /**
  * /internal/** 전용 — X-Internal-Token (HS256 · 공유 시크릿) 검증 (Member 명세 §13 과 동일 · aud = payment).
  * <pre>
- * ① 헤더 없음 → 401 INTERNAL_TOKEN_REQUIRED   ② 서명 · ③ iss/aud · ④ exp(±30초) 실패 → 401 INTERNAL_TOKEN_INVALID
+ * ① 헤더 없음 → 401 INTERNAL_TOKEN_REQUIRED   ② 서명 · ③ iss/aud · exp 없음 → 401 INTERNAL_TOKEN_INVALID (사유는 로그)
+ * ④ exp(+30초) 지남 → 401 INTERNAL_TOKEN_EXPIRED
  * </pre>
  * 🔴 이 필터 없이 배포되면 클러스터 안의 누구든 금액을 정해 결제를 준비 · 취소할 수 있습니다.
  * 🔴 X-User-Id 를 신뢰하지 않습니다 — 내부 API 의 사용자 식별은 요청 본문 값으로 합니다.
@@ -57,34 +58,38 @@ public class InternalTokenFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String token = request.getHeader(HEADER);
         if (token == null || token.isBlank()) {
-            reject(request, response, CommonErrorCode.INTERNAL_TOKEN_REQUIRED);
+            reject(request, response, CommonErrorCode.INTERNAL_TOKEN_REQUIRED, "missing");
             return;
         }
-        if (!isValid(token)) {
-            reject(request, response, CommonErrorCode.INTERNAL_TOKEN_INVALID);
+        String rejected = check(token);
+        if (rejected != null) {
+            reject(request, response, "expired".equals(rejected)
+                    ? CommonErrorCode.INTERNAL_TOKEN_EXPIRED : CommonErrorCode.INTERNAL_TOKEN_INVALID, rejected);
             return;
         }
         chain.doFilter(request, response);
     }
 
-    private boolean isValid(String token) {
+    /** 통과면 null — 아니면 거절 사유 (expired 만 응답 코드가 다르고 나머지는 로그로만 구분) */
+    private String check(String token) {
         try {
             SignedJWT jwt = SignedJWT.parse(token);
-            if (!JWSAlgorithm.HS256.equals(jwt.getHeader().getAlgorithm())) return false;   // ★ alg 고정
-            if (!jwt.verify(verifier)) return false;
+            if (!JWSAlgorithm.HS256.equals(jwt.getHeader().getAlgorithm())) return "alg";   // ★ alg 고정
+            if (!jwt.verify(verifier)) return "signature";
             JWTClaimsSet claims = jwt.getJWTClaimsSet();
-            if (claims.getIssuer() == null || !props.allowedIssuers().contains(claims.getIssuer())) return false;
-            if (claims.getAudience() == null || !claims.getAudience().contains(props.expectedAudience())) return false;
+            if (claims.getIssuer() == null || !props.allowedIssuers().contains(claims.getIssuer())) return "issuer";
+            if (claims.getAudience() == null || !claims.getAudience().contains(props.expectedAudience())) return "audience";
             Date exp = claims.getExpirationTime();
+            if (exp == null) return "exp";
             Instant now = clock.instant();
-            return exp != null && now.isBefore(exp.toInstant().plusSeconds(props.clockSkewSeconds()));
+            return now.isBefore(exp.toInstant().plusSeconds(props.clockSkewSeconds())) ? null : "expired";
         } catch (Exception e) {
-            return false;
+            return "parse";
         }
     }
 
-    private void reject(HttpServletRequest request, HttpServletResponse response, CommonErrorCode code) throws IOException {
-        log.warn("internal_token_rejected code={} path={} remote={}", code, request.getRequestURI(), request.getRemoteAddr());
+    private void reject(HttpServletRequest request, HttpServletResponse response, CommonErrorCode code, String reason) throws IOException {
+        log.warn("internal_token_rejected code={} reason={} path={} remote={}", code, reason, request.getRequestURI(), request.getRemoteAddr());
         response.setStatus(code.getStatus().value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());

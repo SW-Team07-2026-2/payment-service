@@ -100,8 +100,10 @@ class TossPaymentGatewayTest {
         expectLookup("{\"orderId\":\"GOODS-1\",\"status\":\"IN_PROGRESS\",\"method\":\"카드\",\"totalAmount\":55000}");
 
         assertThatThrownBy(() -> gateway.confirm("pk_1", "GOODS-1", 55000, null))
-                .isInstanceOfSatisfying(GeneralException.class,
-                        e -> assertThat(e.getErrorCode().getCode()).isEqualTo("PG_UNAVAILABLE"));
+                .isInstanceOfSatisfying(GeneralException.class, e -> {
+                    assertThat(e.getErrorCode().getCode()).isEqualTo("PG_PROCESSING");
+                    assertThat(e.getErrorCode().getStatus().value()).isEqualTo(503);
+                });
     }
 
     /** 🔴 다른 주문의 승인된 paymentKey 를 보내도 우리 주문으로 승인하지 않습니다 */
