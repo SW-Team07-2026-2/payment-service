@@ -3,13 +3,11 @@ package com.indie.payment.global.outbox;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.indie.payment.global.event.EventPublisher;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * 이벤트를 업무 데이터와 <b>같은 트랜잭션</b>에 INSERT 합니다 — DB 커밋은 됐는데 Kafka 발행이 실패해
@@ -18,11 +16,11 @@ import java.util.UUID;
 @Component
 public class OutboxAppender implements EventPublisher {
 
-    private final JdbcTemplate jdbc;
+    private final OutboxRepository outboxRepository;
     private final ObjectMapper objectMapper;
 
-    public OutboxAppender(JdbcTemplate jdbc, ObjectMapper objectMapper) {
-        this.jdbc = jdbc;
+    public OutboxAppender(OutboxRepository outboxRepository, ObjectMapper objectMapper) {
+        this.outboxRepository = outboxRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -30,8 +28,7 @@ public class OutboxAppender implements EventPublisher {
     @Transactional(propagation = Propagation.MANDATORY)
     public void publish(String eventType, Map<String, Object> payload) {
         try {
-            jdbc.update("INSERT INTO outbox (event_id, event_type, payload) VALUES (?, ?, ?::jsonb)",
-                    UUID.randomUUID(), eventType, objectMapper.writeValueAsString(payload));
+            outboxRepository.save(OutboxEntity.pending(eventType, objectMapper.writeValueAsString(payload)));
         } catch (JsonProcessingException e) {
             throw new IllegalArgumentException("outbox payload serialization failed", e);
         }
