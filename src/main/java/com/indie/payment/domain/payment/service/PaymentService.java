@@ -214,8 +214,11 @@ public class PaymentService {
     }
 
     private PaymentPrepared sameRequest(PaymentEntity existing, PrepareCommand cmd) {
-        if (!Objects.equals(existing.getUserId(), cmd.userId()) || existing.getAmount() != cmd.amount()) {
-            throw new GeneralException(PaymentErrorCode.IDEMPOTENCY_CONFLICT);
+        if (!Objects.equals(existing.getUserId(), cmd.userId())) {
+            throw new GeneralException(PaymentErrorCode.IDEMPOTENCY_USER_MISMATCH);
+        }
+        if (existing.getAmount() != cmd.amount()) {
+            throw new GeneralException(PaymentErrorCode.IDEMPOTENCY_AMOUNT_MISMATCH);
         }
         return prepared(existing);
     }

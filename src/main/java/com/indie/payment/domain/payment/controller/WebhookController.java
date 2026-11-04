@@ -39,24 +39,28 @@ public class WebhookController {
     public ResponseEntity<Void> receive(@PathVariable String provider,
                                         @RequestHeader(value = "X-Signature", required = false) String signature,
                                         @RequestBody byte[] body) {
-        if (!valid(body, signature)) {
-            log.warn("webhook_signature_invalid provider={}", provider);
+        String rejected = rejectReason(body, signature);
+        if (rejected != null) {
+            log.warn("webhook_signature_invalid provider={} reason={}", provider, rejected);
             throw new GeneralException(PaymentErrorCode.INVALID_SIGNATURE);
         }
         log.info("webhook_received provider={} bytes={}", provider, body.length);
         return ResponseEntity.ok().build();
     }
 
-    boolean valid(byte[] body, String signature) {
-        if (signature == null || signature.isBlank()) return false;
+    /** 통과면 null — 아니면 사유 (응답은 INVALID_SIGNATURE 하나 · 사유는 로그로만) */
+    String rejectReason(byte[] body, String signature) {
+        if (signature == null || signature.isBlank()) return "missing";
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(secret, "HmacSHA256"));
             byte[] expected = mac.doFinal(body);
             byte[] actual = HexFormat.of().parseHex(signature.trim().toLowerCase());
-            return MessageDigest.isEqual(expected, actual);           // ★ 상수 시간 비교
-        } catch (IllegalArgumentException | GeneralSecurityException e) {
-            return false;
+            return MessageDigest.isEqual(expected, actual) ? null : "mismatch";           // ★ 상수 시간 비교
+        } catch (IllegalArgumentException e) {
+            return "malformed";   // 16진수가 아님
+        } catch (GeneralSecurityException e) {
+            return "mac";
         }
     }
 }

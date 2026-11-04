@@ -9,6 +9,7 @@ import com.indie.payment.global.config.PaymentProperties;
 import com.indie.payment.global.event.EventPublisher;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
@@ -35,6 +36,24 @@ class PaymentServiceTest {
     private final PaymentService service = new PaymentService(repository, gateway, eventPublisher, new ObjectMapper(),
             mock(TransactionTemplate.class), new PaymentProperties(null, new PaymentProperties.Payment(10), null, null, null),
             Clock.systemUTC());
+
+    /** 같은 주문으로 다시 준비할 때 사용자 · 금액이 다르면 코드가 따로 (둘 다 409) */
+    @Test
+    void prepareWithSameOrderButOtherUserOrAmountConflicts() {
+        TransactionTemplate tx = mock(TransactionTemplate.class);
+        when(tx.execute(any())).thenAnswer(inv -> inv.<TransactionCallback<?>>getArgument(0).doInTransaction(null));
+        PaymentService svc = new PaymentService(repository, gateway, eventPublisher, new ObjectMapper(), tx,
+                new PaymentProperties(null, new PaymentProperties.Payment(10), null, null, null), Clock.systemUTC());
+        when(repository.findByIdempotencyKey(any())).thenReturn(Optional.of(ticket()));   // userId 7 · 55000원
+
+        assertThatThrownBy(() -> svc.prepare(new PaymentService.PrepareCommand("TICKET", "42", 8L, 55000, null)))
+                .isInstanceOfSatisfying(GeneralException.class,
+                        e -> assertThat(e.getErrorCode().getCode()).isEqualTo("IDEMPOTENCY_USER_MISMATCH"));
+        assertThatThrownBy(() -> svc.prepare(new PaymentService.PrepareCommand("TICKET", "42", 7L, 44000, null)))
+                .isInstanceOfSatisfying(GeneralException.class,
+                        e -> assertThat(e.getErrorCode().getCode()).isEqualTo("IDEMPOTENCY_AMOUNT_MISMATCH"));
+        assertThat(svc.prepare(new PaymentService.PrepareCommand("TICKET", "42", 7L, 55000, null)).pgOrderId()).isEqualTo("TICKET-1");
+    }
 
     /** ★ P4 는 티켓을 환불하지 않습니다 — 24시간 규칙은 Concert 예매 취소(N13)에서만 (10/24) */
     @Test

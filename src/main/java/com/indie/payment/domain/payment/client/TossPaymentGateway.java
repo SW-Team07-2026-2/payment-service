@@ -98,9 +98,8 @@ public class TossPaymentGateway implements PaymentGateway {
             log.warn("toss_confirm_recovered orderId={} failure={}", orderId, failure);
             return new ConfirmResult(true, found.method(), null);
         }
-        if (failure == null || IDEMPOTENT_REQUEST_PROCESSING.equals(failure)) {
-            throw new GeneralException(PaymentErrorCode.PG_UNAVAILABLE);
-        }
+        if (failure == null) throw new GeneralException(PaymentErrorCode.PG_UNAVAILABLE);                       // 토스 불통 · 타임아웃
+        if (IDEMPOTENT_REQUEST_PROCESSING.equals(failure)) throw new GeneralException(PaymentErrorCode.PG_PROCESSING);   // 첫 요청이 아직 처리 중
         return new ConfirmResult(false, null, failure);
     }
 

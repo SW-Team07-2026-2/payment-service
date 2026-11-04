@@ -10,6 +10,7 @@ public enum CommonErrorCode implements BaseErrorCode {
     UNAUTHENTICATED(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다"),
     INTERNAL_TOKEN_REQUIRED(HttpStatus.UNAUTHORIZED, "내부 호출 인증에 실패했습니다"),
     INTERNAL_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "내부 호출 인증에 실패했습니다"),
+    INTERNAL_TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED, "내부 호출 인증이 만료되었습니다"),   // 서버 간 시계 차이 신호
     NOT_FOUND(HttpStatus.NOT_FOUND, "찾을 수 없습니다"),
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "허용되지 않는 메서드입니다"),
     CONFLICT(HttpStatus.CONFLICT, "요청을 처리할 수 없습니다"),
