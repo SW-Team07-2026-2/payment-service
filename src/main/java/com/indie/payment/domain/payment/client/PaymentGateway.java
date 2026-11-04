@@ -9,7 +9,7 @@ public interface PaymentGateway {
 
     /**
      * 결제 승인 — orderId 는 우리가 만든 PG 주문번호(pg_order_id), amount 는 prepare 때 저장한 금액입니다.
-     * testCode — 테스트용 강제 실패 (X-Force-Decline). 토스 테스트 키에서만 동작합니다.
+     * testCode — 테스트용 강제 실패 (X-Force-Decline). 로컬 프로필(app.toss.allow-test-code)에서만 보내고 운영은 무시합니다.
      */
     ConfirmResult confirm(String paymentKey, String orderId, int amount, String testCode);
 

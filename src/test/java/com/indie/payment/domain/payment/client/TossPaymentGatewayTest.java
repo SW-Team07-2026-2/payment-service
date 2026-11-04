@@ -35,12 +35,12 @@ class TossPaymentGatewayTest {
 
     private final RestClient.Builder builder = RestClient.builder();
     private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-    private final TossPaymentGateway gateway = new TossPaymentGateway(builder, BASE, KEY);
+    private final TossPaymentGateway gateway = new TossPaymentGateway(builder, BASE, KEY, true);
 
     /** ★ 실결제 차단 — 라이브 키면 빈을 만들지 못해 Payment 가 기동하지 않습니다 */
     @Test
     void liveKeyIsRejected() {
-        assertThatThrownBy(() -> new TossPaymentGateway(RestClient.builder(), BASE, "live_gsk_x"))
+        assertThatThrownBy(() -> new TossPaymentGateway(RestClient.builder(), BASE, "live_gsk_x", false))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -72,6 +72,21 @@ class TossPaymentGatewayTest {
         assertThat(gateway.confirm("pk_1", "GOODS-1", 55000, "REJECT_CARD_PAYMENT"))
                 .isEqualTo(new PaymentGateway.ConfirmResult(false, null, "REJECT_CARD_PAYMENT"));
         server.verify();
+    }
+
+    /** ★ 운영(allowTestCode=false) — X-Force-Decline 을 보내도 토스 테스트 코드 헤더를 붙이지 않습니다 (11/04 T4A) */
+    @Test
+    void testCodeIsIgnoredWhenNotAllowed() {
+        RestClient.Builder prodBuilder = RestClient.builder();
+        MockRestServiceServer prodServer = MockRestServiceServer.bindTo(prodBuilder).build();
+        TossPaymentGateway prod = new TossPaymentGateway(prodBuilder, BASE, KEY, false);
+        prodServer.expect(requestTo(CONFIRM))
+                .andExpect(headerDoesNotExist(TossPaymentGateway.TEST_CODE))
+                .andRespond(withSuccess("{\"status\":\"DONE\",\"method\":\"카드\"}", MediaType.APPLICATION_JSON));
+
+        assertThat(prod.confirm("pk_1", "GOODS-1", 55000, "REJECT_CARD_PAYMENT"))
+                .isEqualTo(new PaymentGateway.ConfirmResult(true, "카드", null));
+        prodServer.verify();
     }
 
     /** ★ 승인 실패를 바로 단정하지 않습니다 — 토스가 이미 승인했으면 조회로 확인해 승인 */

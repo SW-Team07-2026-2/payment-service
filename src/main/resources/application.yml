@@ -68,6 +68,7 @@ app:
     base-url: https://api.tosspayments.com
     connect-timeout-ms: 3000
     read-timeout-ms: 10000                    # Concert claim-seconds(30) 보다 짧게 — 좌석 잠금이 풀리기 전에 승인 결과가 남습니다
+    allow-test-code: false                    # X-Force-Decline 무시 (11/04 T4A) — 로컬 프로필만 true
   page:
     size: 20
     max-size: 50
