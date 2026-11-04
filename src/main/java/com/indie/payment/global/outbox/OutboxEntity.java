@@ -36,6 +36,15 @@ public class OutboxEntity {
 
     protected OutboxEntity() {}
 
+    /** 미발행 이벤트 1건 — payload 는 JSON 문자열 (jsonb 컬럼) */
+    public static OutboxEntity pending(String eventType, String payload) {
+        OutboxEntity e = new OutboxEntity();
+        e.eventId = UUID.randomUUID();
+        e.eventType = eventType;
+        e.payload = payload;
+        return e;
+    }
+
     public void markPublished(OffsetDateTime at) {
         this.publishedAt = at;
     }
