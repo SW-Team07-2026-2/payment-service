@@ -18,7 +18,10 @@ public interface PaymentRepository {
     /** ✅ 소유권은 항상 조회 조건에 (IDOR) */
     Optional<PaymentEntity> findByIdAndUserId(Long id, Long userId);
 
-    Optional<PaymentEntity> findByOrderTypeAndOrderRef(String orderType, String orderRef);
+    /** 같은 주문의 마지막 결제 — 거절된 뒤 다시 준비하면 주문 하나에 결제 행이 늘어납니다 (11/04 80B) */
+    Optional<PaymentEntity> findFirstByOrderTypeAndOrderRefOrderByIdDesc(String orderType, String orderRef);
+
+    long countByOrderTypeAndOrderRef(String orderType, String orderRef);
 
     List<PaymentEntity> findByUserIdOrderByIdDesc(Long userId, Limit limit);
 
@@ -31,5 +34,6 @@ public interface PaymentRepository {
 
     Optional<PaymentEntity> lockByIdAndUserId(Long id, Long userId);
 
+    /** 같은 주문의 마지막 결제를 잠급니다 */
     Optional<PaymentEntity> lockByOrder(String orderType, String orderRef);
 }

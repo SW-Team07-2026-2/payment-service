@@ -70,6 +70,20 @@ class PaymentSchemaTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    /** ★ 80B — 거절 뒤 다시 준비하면 주문 하나에 결제 행이 둘. 승인 · 취소는 마지막 시도만 잠급니다 (native FOR UPDATE) */
+    @Test
+    void lockByOrderTakesLatestAttempt() {
+        repository.save(new PaymentEntity(UUID.randomUUID(), "TICKET-a1", "TICKET", "9", 7L, 1000, null, OffsetDateTime.now()));
+        PaymentEntity retry = repository.save(new PaymentEntity(UUID.randomUUID(), "TICKET-a2", "TICKET", "9", 7L, 1000, null, OffsetDateTime.now()));
+        em.flush();
+        em.clear();
+
+        assertThat(repository.lockByOrder("TICKET", "9")).get().extracting(PaymentEntity::getPgOrderId).isEqualTo("TICKET-a2");
+        assertThat(repository.findFirstByOrderTypeAndOrderRefOrderByIdDesc("TICKET", "9")).get()
+                .extracting(PaymentEntity::getId).isEqualTo(retry.getId());
+        assertThat(repository.countByOrderTypeAndOrderRef("TICKET", "9")).isEqualTo(2);
+    }
+
     /** 같은 트랜잭션에 jsonb 로 저장 (@DataJpaTest 는 테스트마다 트랜잭션) */
     @Test
     void outboxStoresJsonbPayloadInTransaction() {

@@ -106,6 +106,12 @@ public class TossPaymentGateway implements PaymentGateway {
         return new ConfirmResult(false, null, failure);
     }
 
+    @Override
+    public Found find(String paymentKey) {
+        TossPayment p = lookup(paymentKey);
+        return p == null ? null : new Found(p.orderId(), p.status(), p.method(), p.totalAmount());
+    }
+
     /** paymentKey 로 결제 조회 — 주문서형 시크릿 키(gsk)로는 orderId 조회를 부를 수 없습니다. 없으면 null · 불통이면 503 */
     private TossPayment lookup(String paymentKey) {
         try {

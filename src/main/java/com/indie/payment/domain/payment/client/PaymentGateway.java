@@ -16,5 +16,11 @@ public interface PaymentGateway {
     /** 전액 취소(환불) — 이미 취소된 결제면 그대로 성공입니다 */
     void cancel(String paymentKey, String reason);
 
+    /** paymentKey 로 결제 조회 — 토스에 없으면 null · 불통이면 PG_UNAVAILABLE (11/04 84A — 결과를 모르는 승인을 정리할 때) */
+    Found find(String paymentKey);
+
     record ConfirmResult(boolean approved, String method, String declineReason) {}
+
+    /** status = 토스 결제 상태 (READY · IN_PROGRESS · DONE · ABORTED · EXPIRED · CANCELED …) */
+    record Found(String orderId, String status, String method, int totalAmount) {}
 }

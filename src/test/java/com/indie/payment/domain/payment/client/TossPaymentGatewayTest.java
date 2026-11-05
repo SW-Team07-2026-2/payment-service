@@ -195,6 +195,25 @@ class TossPaymentGatewayTest {
                         e -> assertThat(e.getErrorCode().getCode()).isEqualTo("PG_CANCEL_REJECTED"));
     }
 
+    /** 84A — 결과를 모르는 승인 정리용 조회. 토스에 있으면 상태 그대로 · 없으면(4xx) null · 불통이면 PG_UNAVAILABLE */
+    @Test
+    void findReturnsTossStatusOrNull() {
+        expectLookup("{\"orderId\":\"TICKET-1\",\"status\":\"IN_PROGRESS\",\"method\":\"카드\",\"totalAmount\":55000}");
+        assertThat(gateway.find("pk_1")).isEqualTo(new PaymentGateway.Found("TICKET-1", "IN_PROGRESS", "카드", 55000));
+        server.verify();
+        server.reset();
+
+        server.expect(requestTo(LOOKUP)).andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
+                .body("{\"code\":\"NOT_FOUND_PAYMENT\",\"message\":\"존재하지 않는 결제 입니다.\"}"));
+        assertThat(gateway.find("pk_1")).isNull();
+        server.verify();
+        server.reset();
+
+        server.expect(requestTo(LOOKUP)).andRespond(withServerError());
+        assertThatThrownBy(() -> gateway.find("pk_1")).isInstanceOfSatisfying(GeneralException.class,
+                e -> assertThat(e.getErrorCode().getCode()).isEqualTo("PG_UNAVAILABLE"));
+    }
+
     private void expectLookup(String body) {
         server.expect(requestTo(LOOKUP)).andExpect(method(HttpMethod.GET)).andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
     }

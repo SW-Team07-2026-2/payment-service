@@ -67,7 +67,7 @@ app:
   toss:                                       # 시크릿 키는 /etc/secrets/toss.secret-key (test_… 만 — TossPaymentGateway)
     base-url: https://api.tosspayments.com
     connect-timeout-ms: 3000
-    read-timeout-ms: 10000                    # Concert claim-seconds(30) 보다 짧게 — 좌석 잠금이 풀리기 전에 승인 결과가 남습니다
+    read-timeout-ms: 10000                    # 승인 + 조회 최악 (3+10)×2 = 26초 < Concert paying-check-seconds(60) — 정리가 묻기 전에 승인 결과가 남습니다 (11/04 77A)
     allow-test-code: false                    # X-Force-Decline 무시 (11/04 T4A) — 로컬 프로필만 true
   page:
     size: 20
