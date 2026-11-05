@@ -29,19 +29,22 @@ public class TossPaymentGateway implements PaymentGateway {
     private static final Logger log = LoggerFactory.getLogger(TossPaymentGateway.class);
 
     static final String IDEMPOTENCY_KEY = "Idempotency-Key";
-    /** 넣은 에러 코드를 그대로 재현합니다 (REJECT_CARD_PAYMENT …) — 라이브 키면 토스가 무시합니다 */
+    /** 넣은 에러 코드를 그대로 재현합니다 (REJECT_CARD_PAYMENT …) — allowTestCode(로컬)일 때만 보냅니다 · 라이브 키면 토스가 무시합니다 */
     static final String TEST_CODE = "TossPayments-Test-Code";
     /** 같은 멱등키의 첫 요청이 아직 처리 중 — 거절이 아니라 "모름" */
     private static final String IDEMPOTENT_REQUEST_PROCESSING = "IDEMPOTENT_REQUEST_PROCESSING";
 
     private final RestClient rest;
+    private final boolean allowTestCode;
 
     @Autowired
     public TossPaymentGateway(PaymentProperties props, @Value("${toss.secret-key}") String secretKey) {
-        this(RestClient.builder().requestFactory(requestFactory(props.toss())), props.toss().baseUrl(), secretKey);
+        this(RestClient.builder().requestFactory(requestFactory(props.toss())), props.toss().baseUrl(), secretKey,
+                props.toss().allowTestCode());
     }
 
-    TossPaymentGateway(RestClient.Builder builder, String baseUrl, String secretKey) {
+    TossPaymentGateway(RestClient.Builder builder, String baseUrl, String secretKey, boolean allowTestCode) {
+        this.allowTestCode = allowTestCode;
         String key = secretKey.trim();
         if (!key.startsWith("test_")) {
             throw new IllegalStateException("toss.secret-key 는 테스트 키(test_…)만 허용합니다 — 실결제 차단");
@@ -61,7 +64,7 @@ public class TossPaymentGateway implements PaymentGateway {
             Confirmed confirmed = rest.post().uri("/v1/payments/confirm")
                     .headers(h -> {
                         h.set(IDEMPOTENCY_KEY, idempotencyKey("confirm", orderId));
-                        if (testCode != null && !testCode.isBlank()) h.set(TEST_CODE, testCode);
+                        if (allowTestCode && testCode != null && !testCode.isBlank()) h.set(TEST_CODE, testCode);
                     })
                     .body(new ConfirmRequest(paymentKey, orderId, amount))
                     .exchange((req, res) -> {
@@ -101,6 +104,12 @@ public class TossPaymentGateway implements PaymentGateway {
         if (failure == null) throw new GeneralException(PaymentErrorCode.PG_UNAVAILABLE);                       // 토스 불통 · 타임아웃
         if (IDEMPOTENT_REQUEST_PROCESSING.equals(failure)) throw new GeneralException(PaymentErrorCode.PG_PROCESSING);   // 첫 요청이 아직 처리 중
         return new ConfirmResult(false, null, failure);
+    }
+
+    @Override
+    public Found find(String paymentKey) {
+        TossPayment p = lookup(paymentKey);
+        return p == null ? null : new Found(p.orderId(), p.status(), p.method(), p.totalAmount());
     }
 
     /** paymentKey 로 결제 조회 — 주문서형 시크릿 키(gsk)로는 orderId 조회를 부를 수 없습니다. 없으면 null · 불통이면 503 */

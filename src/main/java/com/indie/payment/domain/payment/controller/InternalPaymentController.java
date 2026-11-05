@@ -36,8 +36,8 @@ public class InternalPaymentController {
     }
 
     /**
-     * 내부 승인 — 15 에 없는 내부 API 입니다. 티켓은 Concert 가 좌석을 먼저 확보한 뒤에만 여기로 승인합니다 (P1 은 티켓 거부).
-     * 4xx 는 돈이 나가기 전 거부 — Concert 가 좌석을 다시 경합으로 돌립니다.
+     * 내부 승인 — 15 에 없는 내부 API 입니다. 티켓은 Concert 가 선점 좌석을 결제 중(PAYING)으로 바꾼 뒤에만 여기로 승인합니다 (P1 은 티켓 거부).
+     * 4xx 는 돈이 나가기 전 거부 — Concert 가 좌석을 다시 선점(HELD)으로 돌립니다.
      */
     @PostMapping("/internal/payments/confirm")
     public ApiResponse<PaymentView> confirm(@Valid @RequestBody OrderConfirmRequest r) {

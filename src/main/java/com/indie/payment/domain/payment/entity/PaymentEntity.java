@@ -39,6 +39,10 @@ public class PaymentEntity {
     @Column(unique = true, length = 200)
     private String paymentKey;
 
+    /** 승인 요청에 쓴 paymentKey — 토스를 부르기 전에 남깁니다. 결과를 모를 때 정리가 이 키로 조회합니다 (11/04 84A · 검증 전 값이라 UNIQUE 아님) */
+    @Column(length = 200)
+    private String requestedPaymentKey;
+
     private String orderType;
 
     private String orderRef;
@@ -76,6 +80,10 @@ public class PaymentEntity {
         this.requestedAt = now;
     }
 
+    public void requestConfirm(String paymentKey) {
+        this.requestedPaymentKey = paymentKey;
+    }
+
     public void approve(String paymentKey, String method, OffsetDateTime now) {
         this.status = Status.APPROVED;
         this.paymentKey = paymentKey;
@@ -102,6 +110,7 @@ public class PaymentEntity {
     public Long getId() { return id; }
     public String getPgOrderId() { return pgOrderId; }
     public String getPaymentKey() { return paymentKey; }
+    public String getRequestedPaymentKey() { return requestedPaymentKey; }
     public String getOrderType() { return orderType; }
     public String getOrderRef() { return orderRef; }
     public Long getUserId() { return userId; }
