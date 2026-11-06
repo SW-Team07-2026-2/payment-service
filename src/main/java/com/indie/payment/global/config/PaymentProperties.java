@@ -11,7 +11,8 @@ public record PaymentProperties(Internal internal, Payment payment, Toss toss, P
 
     public record Payment(long ttlMinutes) {}
 
-    public record Toss(String baseUrl, int connectTimeoutMs, int readTimeoutMs) {}
+    /** allowTestCode — X-Force-Decline 을 토스 테스트 코드로 보낼지. 로컬만 true (11/04 T4A · 운영은 무시) */
+    public record Toss(String baseUrl, int connectTimeoutMs, int readTimeoutMs, boolean allowTestCode) {}
 
     public record Page(int size, int maxSize) {}
 

@@ -64,7 +64,20 @@ class InternalTokenFilterTest {
 
     @Test
     void expiredBeyondSkewIs401() throws Exception {
-        assertThat(call(token(SECRET, "catalog", "payment", -60)).getStatus()).isEqualTo(401);
+        MockHttpServletResponse response = call(token(SECRET, "catalog", "payment", -60));
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentAsString()).contains("INTERNAL_TOKEN_EXPIRED");
+    }
+
+    /** 만료 시각이 없으면 만료가 아니라 잘못된 토큰 */
+    @Test
+    void tokenWithoutExpIsInvalid() throws Exception {
+        SignedJWT jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256),
+                new JWTClaimsSet.Builder().issuer("catalog").audience("payment").build());
+        jwt.sign(new MACSigner(SECRET.getBytes(StandardCharsets.UTF_8)));
+        MockHttpServletResponse response = call(jwt.serialize());
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentAsString()).contains("INTERNAL_TOKEN_INVALID");
     }
 
     private static String token(String secret, String iss, String aud, long expInSeconds) throws Exception {

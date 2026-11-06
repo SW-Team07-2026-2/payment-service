@@ -35,12 +35,12 @@ class TossPaymentGatewayTest {
 
     private final RestClient.Builder builder = RestClient.builder();
     private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-    private final TossPaymentGateway gateway = new TossPaymentGateway(builder, BASE, KEY);
+    private final TossPaymentGateway gateway = new TossPaymentGateway(builder, BASE, KEY, true);
 
     /** ★ 실결제 차단 — 라이브 키면 빈을 만들지 못해 Payment 가 기동하지 않습니다 */
     @Test
     void liveKeyIsRejected() {
-        assertThatThrownBy(() -> new TossPaymentGateway(RestClient.builder(), BASE, "live_gsk_x"))
+        assertThatThrownBy(() -> new TossPaymentGateway(RestClient.builder(), BASE, "live_gsk_x", false))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -74,6 +74,21 @@ class TossPaymentGatewayTest {
         server.verify();
     }
 
+    /** ★ 운영(allowTestCode=false) — X-Force-Decline 을 보내도 토스 테스트 코드 헤더를 붙이지 않습니다 (11/04 T4A) */
+    @Test
+    void testCodeIsIgnoredWhenNotAllowed() {
+        RestClient.Builder prodBuilder = RestClient.builder();
+        MockRestServiceServer prodServer = MockRestServiceServer.bindTo(prodBuilder).build();
+        TossPaymentGateway prod = new TossPaymentGateway(prodBuilder, BASE, KEY, false);
+        prodServer.expect(requestTo(CONFIRM))
+                .andExpect(headerDoesNotExist(TossPaymentGateway.TEST_CODE))
+                .andRespond(withSuccess("{\"status\":\"DONE\",\"method\":\"카드\"}", MediaType.APPLICATION_JSON));
+
+        assertThat(prod.confirm("pk_1", "GOODS-1", 55000, "REJECT_CARD_PAYMENT"))
+                .isEqualTo(new PaymentGateway.ConfirmResult(true, "카드", null));
+        prodServer.verify();
+    }
+
     /** ★ 승인 실패를 바로 단정하지 않습니다 — 토스가 이미 승인했으면 조회로 확인해 승인 */
     @Test
     void failedConfirmButDoneAtTossIsApproved() {
@@ -100,8 +115,10 @@ class TossPaymentGatewayTest {
         expectLookup("{\"orderId\":\"GOODS-1\",\"status\":\"IN_PROGRESS\",\"method\":\"카드\",\"totalAmount\":55000}");
 
         assertThatThrownBy(() -> gateway.confirm("pk_1", "GOODS-1", 55000, null))
-                .isInstanceOfSatisfying(GeneralException.class,
-                        e -> assertThat(e.getErrorCode().getCode()).isEqualTo("PG_UNAVAILABLE"));
+                .isInstanceOfSatisfying(GeneralException.class, e -> {
+                    assertThat(e.getErrorCode().getCode()).isEqualTo("PG_PROCESSING");
+                    assertThat(e.getErrorCode().getStatus().value()).isEqualTo(503);
+                });
     }
 
     /** 🔴 다른 주문의 승인된 paymentKey 를 보내도 우리 주문으로 승인하지 않습니다 */
@@ -176,6 +193,25 @@ class TossPaymentGatewayTest {
         assertThatThrownBy(() -> gateway.cancel("pk_1", "USER_CANCEL"))
                 .isInstanceOfSatisfying(GeneralException.class,
                         e -> assertThat(e.getErrorCode().getCode()).isEqualTo("PG_CANCEL_REJECTED"));
+    }
+
+    /** 84A — 결과를 모르는 승인 정리용 조회. 토스에 있으면 상태 그대로 · 없으면(4xx) null · 불통이면 PG_UNAVAILABLE */
+    @Test
+    void findReturnsTossStatusOrNull() {
+        expectLookup("{\"orderId\":\"TICKET-1\",\"status\":\"IN_PROGRESS\",\"method\":\"카드\",\"totalAmount\":55000}");
+        assertThat(gateway.find("pk_1")).isEqualTo(new PaymentGateway.Found("TICKET-1", "IN_PROGRESS", "카드", 55000));
+        server.verify();
+        server.reset();
+
+        server.expect(requestTo(LOOKUP)).andRespond(withStatus(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
+                .body("{\"code\":\"NOT_FOUND_PAYMENT\",\"message\":\"존재하지 않는 결제 입니다.\"}"));
+        assertThat(gateway.find("pk_1")).isNull();
+        server.verify();
+        server.reset();
+
+        server.expect(requestTo(LOOKUP)).andRespond(withServerError());
+        assertThatThrownBy(() -> gateway.find("pk_1")).isInstanceOfSatisfying(GeneralException.class,
+                e -> assertThat(e.getErrorCode().getCode()).isEqualTo("PG_UNAVAILABLE"));
     }
 
     private void expectLookup(String body) {

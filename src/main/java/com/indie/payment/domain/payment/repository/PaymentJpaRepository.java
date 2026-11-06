@@ -21,8 +21,9 @@ public interface PaymentJpaRepository extends JpaRepository<PaymentEntity, Long>
     @Query("select p from PaymentEntity p where p.id = :id and p.userId = :userId")
     Optional<PaymentEntity> lockByIdAndUserId(@Param("id") Long id, @Param("userId") Long userId);
 
+    /** 마지막 시도만 — 거절된 앞선 결제는 끝난 행이라 건드리지 않습니다 (11/04 80B) */
     @Override
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select p from PaymentEntity p where p.orderType = :orderType and p.orderRef = :orderRef")
+    @Query(value = "SELECT * FROM payment WHERE order_type = :orderType AND order_ref = :orderRef ORDER BY id DESC LIMIT 1 FOR UPDATE",
+            nativeQuery = true)
     Optional<PaymentEntity> lockByOrder(@Param("orderType") String orderType, @Param("orderRef") String orderRef);
 }

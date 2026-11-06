@@ -17,16 +17,16 @@ class WebhookControllerTest {
     @Test
     void validSignaturePasses() throws Exception {
         byte[] body = "{\"eventId\":\"e1\"}".getBytes(StandardCharsets.UTF_8);
-        assertThat(controller.valid(body, sign(body))).isTrue();
+        assertThat(controller.rejectReason(body, sign(body))).isNull();
     }
 
     @Test
     void tamperedBodyOrMissingSignatureFails() throws Exception {
         byte[] body = "{\"eventId\":\"e1\"}".getBytes(StandardCharsets.UTF_8);
         String signature = sign(body);
-        assertThat(controller.valid("{\"eventId\":\"e2\"}".getBytes(StandardCharsets.UTF_8), signature)).isFalse();
-        assertThat(controller.valid(body, null)).isFalse();
-        assertThat(controller.valid(body, "not-hex")).isFalse();
+        assertThat(controller.rejectReason("{\"eventId\":\"e2\"}".getBytes(StandardCharsets.UTF_8), signature)).isEqualTo("mismatch");
+        assertThat(controller.rejectReason(body, null)).isEqualTo("missing");
+        assertThat(controller.rejectReason(body, "not-hex")).isEqualTo("malformed");
     }
 
     private static String sign(byte[] body) throws Exception {

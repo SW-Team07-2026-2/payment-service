@@ -9,12 +9,18 @@ public interface PaymentGateway {
 
     /**
      * 결제 승인 — orderId 는 우리가 만든 PG 주문번호(pg_order_id), amount 는 prepare 때 저장한 금액입니다.
-     * testCode — 테스트용 강제 실패 (X-Force-Decline). 토스 테스트 키에서만 동작합니다.
+     * testCode — 테스트용 강제 실패 (X-Force-Decline). 로컬 프로필(app.toss.allow-test-code)에서만 보내고 운영은 무시합니다.
      */
     ConfirmResult confirm(String paymentKey, String orderId, int amount, String testCode);
 
     /** 전액 취소(환불) — 이미 취소된 결제면 그대로 성공입니다 */
     void cancel(String paymentKey, String reason);
 
+    /** paymentKey 로 결제 조회 — 토스에 없으면 null · 불통이면 PG_UNAVAILABLE (11/04 84A — 결과를 모르는 승인을 정리할 때) */
+    Found find(String paymentKey);
+
     record ConfirmResult(boolean approved, String method, String declineReason) {}
+
+    /** status = 토스 결제 상태 (READY · IN_PROGRESS · DONE · ABORTED · EXPIRED · CANCELED …) */
+    record Found(String orderId, String status, String method, int totalAmount) {}
 }
