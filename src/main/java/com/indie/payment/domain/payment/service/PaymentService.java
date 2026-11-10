@@ -121,35 +121,27 @@ public class PaymentService {
     }
 
     /**
-     * 행 잠금 안에서 승인. 결과를 모르면(토스 불통 · 처리 중 — 503) 승인 요청에 쓴 paymentKey 를 남긴 채 커밋하고 503 을 그대로 던집니다 (11/04 84A).
-     * 그 뒤 정리(cancel)가 그 키로 토스를 조회해 승인 · 무효화를 정합니다. 다른 실패는 지금처럼 롤백.
+     * 승인 — 토스 호출은 트랜잭션 밖에서 합니다 (11/10).
+     * <pre>
+     * ① 행 잠금 → 검증 → 승인 요청에 쓸 paymentKey 를 남기고 커밋
+     * ② 토스 승인 — 행 잠금 · DB 커넥션을 잡지 않음 (토스 최악 26초 동안 커넥션 풀이 묶이지 않게)
+     * ③ 다시 잠가 결과 반영
+     * </pre>
+     * ①이 먼저 커밋되므로 ② 도중 파드가 죽어도 정리(cancel)가 그 키로 토스를 조회해 승인 · 무효화를 정합니다 (84A).
+     * 결과를 모르면(토스 불통 · 처리 중 — 503) ③ 없이 그대로 던집니다.
      */
     private PaymentView approveLocked(Supplier<PaymentEntity> lock, String paymentKey, int amount, String forceDecline) {
-        Approval result = tx.execute(s -> {
-            PaymentEntity p = lock.get();
-            try {
-                return new Approval(approve(p, paymentKey, amount, forceDecline), null);
-            } catch (GeneralException e) {
-                if (!isOutcomeUnknown(e)) throw e;
-                return new Approval(null, e);
-            }
-        });
-        if (result.unknown() != null) throw result.unknown();
-        return result.view();
+        PaymentEntity requested = tx.execute(s -> request(lock.get(), paymentKey, amount));
+        PaymentGateway.ConfirmResult result = gateway.confirm(paymentKey, requested.getPgOrderId(), requested.getAmount(), forceDecline);
+        return tx.execute(s -> record(repository.lockByPgOrderId(requested.getPgOrderId()).orElseThrow(), paymentKey, result));
     }
-
-    private static boolean isOutcomeUnknown(GeneralException e) {
-        return e.getErrorCode() == PaymentErrorCode.PG_UNAVAILABLE || e.getErrorCode() == PaymentErrorCode.PG_PROCESSING;
-    }
-
-    private record Approval(PaymentView view, GeneralException unknown) {}
 
     private static PaymentEntity owned(Optional<PaymentEntity> found, long userId) {
         return found.filter(p -> p.getUserId() == userId).orElseThrow(() -> new GeneralException(CommonErrorCode.NOT_FOUND));
     }
 
-    /** 🔴 토스에는 클라이언트 금액이 아니라 저장한 금액을 보냅니다 — 금액 대조를 통과한 뒤에도 */
-    private PaymentView approve(PaymentEntity p, String paymentKey, int amount, String forceDecline) {
+    /** ① — 🔴 토스에는 클라이언트 금액이 아니라 여기서 돌려준 행의 저장 금액을 보냅니다 (금액 대조를 통과한 뒤에도) */
+    private PaymentEntity request(PaymentEntity p, String paymentKey, int amount) {
         if (p.getAmount() != amount) {
             log.warn("amount_mismatch paymentId={} expected={} actual={}", p.getId(), p.getAmount(), amount);
             throw new GeneralException(PaymentErrorCode.AMOUNT_MISMATCH);
@@ -167,9 +159,23 @@ public class PaymentService {
             log.warn("confirm_with_other_key_while_unknown paymentId={}", p.getId());
             throw new GeneralException(PaymentErrorCode.PG_PROCESSING);
         }
-        p.requestConfirm(paymentKey);   // ★ 토스를 부르기 전에 — 결과를 모르면 이 값이 커밋됩니다 (84A)
+        p.requestConfirm(paymentKey);   // ★ 토스를 부르기 전에 커밋 — 결과를 모르거나 파드가 죽어도 이 키로 조회합니다 (84A)
+        return p;
+    }
 
-        PaymentGateway.ConfirmResult result = gateway.confirm(paymentKey, p.getPgOrderId(), p.getAmount(), forceDecline);
+    /**
+     * ③ — 그사이 다른 경로가 먼저 기록했으면 덮어쓰지 않습니다 (이벤트도 다시 내지 않음).
+     * APPROVED · DECLINED: 정리가 토스 조회로 승인을 기록했거나 같은 키의 다른 요청 — 토스 멱등키라 결과가 같습니다.
+     * CANCELLED: 승인 중에 예매 취소가 들어와 무효화 · 환불됨.
+     */
+    private PaymentView record(PaymentEntity p, String paymentKey, PaymentGateway.ConfirmResult result) {
+        switch (p.getStatus()) {
+            case APPROVED, DECLINED -> {
+                return view(p);
+            }
+            case CANCELLED -> throw new GeneralException(PaymentErrorCode.PAYMENT_NOT_PENDING);
+            case PENDING -> { }
+        }
         OffsetDateTime now = OffsetDateTime.now(clock);
         if (result.approved()) {
             approved(p, paymentKey, result.method(), now);

@@ -38,6 +38,8 @@ class PaymentServiceTest {
     private final EventPublisher eventPublisher = mock(EventPublisher.class);
     /** 콜백이 예외 없이 끝나면 커밋으로 셉니다 — 결과를 모르는 승인이 paymentKey 를 남긴 채 커밋되는지 확인용 */
     private final AtomicInteger commits = new AtomicInteger();
+    /** 콜백 실행 중 — 토스 호출이 트랜잭션 밖인지 확인용 */
+    private boolean inTransaction;
     private final PaymentService service = new PaymentService(repository, gateway, eventPublisher, new ObjectMapper(),
             passThrough(), new PaymentProperties(null, new PaymentProperties.Payment(10), null, null, null), Clock.systemUTC());
 
@@ -103,8 +105,7 @@ class PaymentServiceTest {
     /** ★ 토스에는 우리 주문번호(pgOrderId)와 저장한 금액으로 승인 — 성공하면 토스 paymentKey 를 남깁니다 (취소의 식별자) */
     @Test
     void concertConfirmsTicketInternally() {
-        PaymentEntity ticket = ticket();
-        when(repository.lockByOrder("TICKET", "42")).thenReturn(Optional.of(ticket));
+        PaymentEntity ticket = lockedTicket();
         when(gateway.confirm("pk_1", "TICKET-1", 55000, null)).thenReturn(new PaymentGateway.ConfirmResult(true, "카드", null));
 
         assertThat(service.confirmByOrder("TICKET", "42", 7L, "pk_1", 55000, null).status()).isEqualTo("APPROVED");
@@ -126,8 +127,7 @@ class PaymentServiceTest {
     /** 토스 거절 → DECLINED + payment.failed (보상). 거절된 paymentKey 는 남기지 않습니다 */
     @Test
     void tossDeclineFailsPayment() {
-        PaymentEntity ticket = ticket();
-        when(repository.lockByOrder("TICKET", "42")).thenReturn(Optional.of(ticket));
+        PaymentEntity ticket = lockedTicket();
         when(gateway.confirm("pk_1", "TICKET-1", 55000, "REJECT_CARD_PAYMENT"))
                 .thenReturn(new PaymentGateway.ConfirmResult(false, null, "REJECT_CARD_PAYMENT"));
 
@@ -151,6 +151,50 @@ class PaymentServiceTest {
         assertThat(ticket.getRequestedPaymentKey()).isEqualTo("pk_1");
         assertThat(ticket.getPaymentKey()).isNull();
         assertThat(ticket.getStatus()).isEqualTo(PaymentEntity.Status.PENDING);
+    }
+
+    /** ★ 11/10 — 토스는 트랜잭션 밖에서 부르고, 그 전에 승인 요청 키가 커밋돼 있습니다. 토스 호출 중 파드가 죽어도 정리가 이 키로 조회합니다 */
+    @Test
+    void tossIsCalledOutsideTransactionAfterKeyIsCommitted() {
+        PaymentEntity ticket = lockedTicket();
+        when(gateway.confirm("pk_1", "TICKET-1", 55000, null)).thenAnswer(inv -> {
+            assertThat(inTransaction).isFalse();
+            assertThat(commits).hasValue(1);
+            assertThat(ticket.getRequestedPaymentKey()).isEqualTo("pk_1");
+            throw new IllegalStateException("pod killed");
+        });
+
+        assertThatThrownBy(() -> service.confirmByOrder("TICKET", "42", 7L, "pk_1", 55000, null)).hasMessage("pod killed");
+        assertThat(commits).hasValue(1);
+        assertThat(ticket.getStatus()).isEqualTo(PaymentEntity.Status.PENDING);
+    }
+
+    /** 토스를 기다리는 사이 정리가 토스 조회로 승인을 먼저 기록했으면 그대로 APPROVED — payment.completed 를 두 번 내지 않습니다 */
+    @Test
+    void approvalRecordedMeanwhileIsNotRecordedTwice() {
+        PaymentEntity ticket = lockedTicket();
+        when(gateway.confirm("pk_1", "TICKET-1", 55000, null)).thenAnswer(inv -> {
+            ticket.approve("pk_1", "카드", OffsetDateTime.now());
+            return new PaymentGateway.ConfirmResult(true, "카드", null);
+        });
+
+        assertThat(service.confirmByOrder("TICKET", "42", 7L, "pk_1", 55000, null).status()).isEqualTo("APPROVED");
+        verify(eventPublisher, never()).publish(anyString(), any());
+    }
+
+    /** 토스를 기다리는 사이 예매 취소로 무효화 · 환불됐으면 승인으로 덮어쓰지 않고 409 */
+    @Test
+    void paymentCancelledMeanwhileStaysCancelled() {
+        PaymentEntity ticket = lockedTicket();
+        when(gateway.confirm("pk_1", "TICKET-1", 55000, null)).thenAnswer(inv -> {
+            ticket.cancel("USER_CANCEL", OffsetDateTime.now());
+            return new PaymentGateway.ConfirmResult(true, "카드", null);
+        });
+
+        assertThatThrownBy(() -> service.confirmByOrder("TICKET", "42", 7L, "pk_1", 55000, null))
+                .isInstanceOfSatisfying(GeneralException.class, e -> assertThat(e.getErrorCode().getCode()).isEqualTo("PAYMENT_NOT_PENDING"));
+        assertThat(ticket.getStatus()).isEqualTo(PaymentEntity.Status.CANCELLED);
+        verify(eventPublisher, never()).publish(anyString(), any());
     }
 
     /** 결과를 모르는 승인이 있으면 다른 paymentKey 로 덮어쓰지 않습니다 — 첫 결과를 잃지 않게 */
@@ -211,12 +255,25 @@ class PaymentServiceTest {
         return ticket;
     }
 
+    /** 승인 ①(lockByOrder) · ③(lockByPgOrderId) 이 같은 행을 잠그게 */
+    private PaymentEntity lockedTicket() {
+        PaymentEntity ticket = ticket();
+        when(repository.lockByOrder("TICKET", "42")).thenReturn(Optional.of(ticket));
+        when(repository.lockByPgOrderId("TICKET-1")).thenReturn(Optional.of(ticket));
+        return ticket;
+    }
+
     private TransactionTemplate passThrough() {
         TransactionTemplate tx = mock(TransactionTemplate.class);
         when(tx.execute(any())).thenAnswer(inv -> {
-            Object result = inv.<TransactionCallback<?>>getArgument(0).doInTransaction(null);
-            commits.incrementAndGet();
-            return result;
+            inTransaction = true;
+            try {
+                Object result = inv.<TransactionCallback<?>>getArgument(0).doInTransaction(null);
+                commits.incrementAndGet();
+                return result;
+            } finally {
+                inTransaction = false;
+            }
         });
         return tx;
     }
