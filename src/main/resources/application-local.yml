@@ -3,9 +3,7 @@ spring:
   config.import: optional:configtree:./local-secrets/
   # 🔴 로컬 DB 도 payment_svc 유저로 붙습니다 (postgres 수퍼유저면 스키마 경계 위반이 로컬에서 통과합니다)
   datasource.url: jdbc:postgresql://localhost:5432/indie_db?currentSchema=payment&ApplicationName=payment
-  # 로컬은 엔티티가 테이블을 만듭니다. 운영은 Flyway(V1__payment_schema.sql) + validate — 둘의 일치는 PaymentSchemaTest 가 확인합니다
-  flyway.enabled: false
-  jpa.hibernate.ddl-auto: update
+  # 로컬도 운영과 같이 Flyway(V1 구조 · V2 값) + validate 입니다. 마이그레이션 파일을 고쳤으면 로컬 DB 의 payment 스키마를 비우고 다시 띄웁니다
   kafka.bootstrap-servers: localhost:9092
 
 springdoc:

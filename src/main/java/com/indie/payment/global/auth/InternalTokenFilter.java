@@ -22,12 +22,15 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Date;
+import java.util.List;
 
 /**
  * /internal/** 전용 — X-Internal-Token (HS256 · 공유 시크릿) 검증 (Member 명세 §13 과 동일 · aud = payment).
  * <pre>
  * ① 헤더 없음 → 401 INTERNAL_TOKEN_REQUIRED   ② 서명 · ③ iss/aud · exp 없음 → 401 INTERNAL_TOKEN_INVALID (사유는 로그)
  * ④ exp(+30초) 지남 → 401 INTERNAL_TOKEN_EXPIRED
+ * ⑤ 발급자는 경로로 나눕니다 — /internal/admin/** 는 admin-issuers(studio)만, 그 밖은 allowed-issuers(catalog · concert)만.
+ *   관리자 토큰으로 결제 준비 · 취소를 부를 수 없고, 주문 서비스 토큰으로 관리자 조회를 부를 수 없습니다.
  * </pre>
  * 🔴 이 필터 없이 배포되면 클러스터 안의 누구든 금액을 정해 결제를 준비 · 취소할 수 있습니다.
  * 🔴 X-User-Id 를 신뢰하지 않습니다 — 내부 API 의 사용자 식별은 요청 본문 값으로 합니다.
@@ -35,6 +38,7 @@ import java.util.Date;
 public class InternalTokenFilter extends OncePerRequestFilter {
 
     public static final String HEADER = "X-Internal-Token";
+    private static final String ADMIN_PREFIX = "/internal/admin/";
     private static final Logger log = LoggerFactory.getLogger(InternalTokenFilter.class);
 
     private final MACVerifier verifier;
@@ -61,7 +65,7 @@ public class InternalTokenFilter extends OncePerRequestFilter {
             reject(request, response, CommonErrorCode.INTERNAL_TOKEN_REQUIRED, "missing");
             return;
         }
-        String rejected = check(token);
+        String rejected = check(token, request.getRequestURI().startsWith(ADMIN_PREFIX));
         if (rejected != null) {
             reject(request, response, "expired".equals(rejected)
                     ? CommonErrorCode.INTERNAL_TOKEN_EXPIRED : CommonErrorCode.INTERNAL_TOKEN_INVALID, rejected);
@@ -71,13 +75,14 @@ public class InternalTokenFilter extends OncePerRequestFilter {
     }
 
     /** 통과면 null — 아니면 거절 사유 (expired 만 응답 코드가 다르고 나머지는 로그로만 구분) */
-    private String check(String token) {
+    private String check(String token, boolean adminPath) {
         try {
             SignedJWT jwt = SignedJWT.parse(token);
             if (!JWSAlgorithm.HS256.equals(jwt.getHeader().getAlgorithm())) return "alg";   // ★ alg 고정
             if (!jwt.verify(verifier)) return "signature";
             JWTClaimsSet claims = jwt.getJWTClaimsSet();
-            if (claims.getIssuer() == null || !props.allowedIssuers().contains(claims.getIssuer())) return "issuer";
+            List<String> issuers = adminPath ? props.adminIssuers() : props.allowedIssuers();
+            if (claims.getIssuer() == null || !issuers.contains(claims.getIssuer())) return "issuer";
             if (claims.getAudience() == null || !claims.getAudience().contains(props.expectedAudience())) return "audience";
             Date exp = claims.getExpirationTime();
             if (exp == null) return "exp";

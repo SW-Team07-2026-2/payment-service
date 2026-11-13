@@ -22,15 +22,19 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import java.time.OffsetDateTime;
+import java.util.Arrays;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 운영 경로 검증 — 로컬은 ddl-auto: update 라 Flyway V1 이 한 번도 돌지 않습니다.
- * 여기서 Flyway 로 스키마를 만들고 ddl-auto: validate 로 엔티티와 대조합니다 (어긋나면 컨텍스트 기동 실패).
+ * 스키마 검증 — Flyway(V1 구조 · V2 값)로 스키마를 만들고 ddl-auto: validate 로 엔티티와 대조합니다 (어긋나면 컨텍스트 기동 실패).
  * Docker 가 없으면 건너뜁니다.
  */
 @Testcontainers(disabledWithoutDocker = true)
@@ -82,6 +86,22 @@ class PaymentSchemaTest {
         assertThat(repository.findFirstByOrderTypeAndOrderRefOrderByIdDesc("TICKET", "9")).get()
                 .extracting(PaymentEntity::getId).isEqualTo(retry.getId());
         assertThat(repository.countByOrderTypeAndOrderRef("TICKET", "9")).isEqualTo(2);
+    }
+
+    /** ★ V2 의 CHECK 값 목록 = Java 쪽 값 — 한쪽만 고치면 여기서 깨집니다 */
+    @Test
+    void checkConstraintValuesMatchJavaEnums() {
+        assertThat(checkValues("ck_payment_status"))
+                .isEqualTo(new TreeSet<>(Arrays.stream(PaymentEntity.Status.values()).map(Enum::name).toList()));
+        assertThat(checkValues("ck_payment_order_type")).containsExactly("GOODS", "TICKET");   // 요청 DTO 의 @Pattern("TICKET|GOODS")
+    }
+
+    private Set<String> checkValues(String constraint) {
+        String def = jdbc.queryForObject("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = ?", String.class, constraint);
+        Set<String> values = new TreeSet<>();
+        Matcher m = Pattern.compile("'([A-Z0-9_]+)'").matcher(def);
+        while (m.find()) values.add(m.group(1));
+        return values;
     }
 
     /** 같은 트랜잭션에 jsonb 로 저장 (@DataJpaTest 는 테스트마다 트랜잭션) */

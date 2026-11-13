@@ -61,6 +61,7 @@ app:
   internal:
     expected-audience: payment
     allowed-issuers: [catalog, concert]       # 결제 준비 · 취소를 부르는 쪽 (11 §7)
+    admin-issuers: [studio]                   # /internal/admin/** 만 — 관리자(Studio) CS 조회
     clock-skew-seconds: 30
   payment:
     ttl-minutes: 15                           # prepare 후 이 시간 안에 confirm 해야 합니다 (Catalog 주문 만료와 같은 값)
