@@ -7,7 +7,8 @@ import java.util.List;
 @ConfigurationProperties("app")
 public record PaymentProperties(Internal internal, Payment payment, Toss toss, Page page, Outbox outbox) {
 
-    public record Internal(String expectedAudience, List<String> allowedIssuers, long clockSkewSeconds) {}
+    /** adminIssuers — /internal/admin/** 만 부를 수 있는 발급자 (Studio). allowedIssuers 는 그 밖의 /internal/** */
+    public record Internal(String expectedAudience, List<String> allowedIssuers, List<String> adminIssuers, long clockSkewSeconds) {}
 
     public record Payment(long ttlMinutes) {}
 
