@@ -40,7 +40,7 @@ import java.util.function.Supplier;
  * <pre>
  * prepare   PENDING 생성 · PG 주문번호 발급        (호출자가 서버에서 계산한 금액을 저장) · 거절된 주문이면 새 결제(새 주문번호)
  * confirm   ★ 저장된 금액과 대조 → 토스 승인/거절   → payment.completed | payment.failed
- * cancel    PENDING 무효화 · APPROVED 환불          → payment.cancelled  (결과를 모르는 승인은 토스에 먼저 물어봄)
+ * cancel    PENDING 무효화 · APPROVED 환불          → payment.cancelled  (결과를 모르는 승인은 토스에 먼저 물어봄 · 남은 환불은 복구가 끝냄)
  * </pre>
  * 🔴 Payment 는 prepare 금액을 그대로 믿습니다. 금액이 맞는지(상품 가격 × 수량)는 호출자(Catalog · Concert)의 책임입니다.
  */
@@ -195,28 +195,33 @@ public class PaymentService {
         eventPublisher.publish("payment.completed", payload);
     }
 
-    /** 내부 취소 — Catalog 의 주문 취소(refundApproved=true) · 만료(false) */
-    @Transactional
+    /** 내부 취소 — Catalog 의 주문 취소(refundApproved=true) · 만료(false), Concert 의 예매 취소(true) · 만료(false) */
     public String cancelByOrder(String orderType, String orderRef, String reason, boolean refundApproved) {
-        PaymentEntity p = repository.lockByOrder(orderType, orderRef).orElseThrow(() -> new GeneralException(CommonErrorCode.NOT_FOUND));
-        return cancel(p, reason, refundApproved).name();
+        return cancelLocked(() -> repository.lockByOrder(orderType, orderRef).orElseThrow(() -> new GeneralException(CommonErrorCode.NOT_FOUND)),
+                reason, refundApproved).getStatus().name();
     }
 
     /**
      * P4 — 사용자 결제 취소 · 환불. 결과는 payment.cancelled 로 주문 서비스에 전달됩니다.
      * TICKET 은 받지 않습니다 (10/24) — 공연 24시간 전 규칙(FR-CON-14)을 Concert 예매 취소(N13)에서만 지키도록
      */
-    @Transactional
     public PaymentView cancelByUser(long userId, long paymentId, String reason) {
-        PaymentEntity p = repository.lockByIdAndUserId(paymentId, userId).orElseThrow(() -> new GeneralException(CommonErrorCode.NOT_FOUND));
-        if (TICKET.equals(p.getOrderType())) {
-            throw new GeneralException(PaymentErrorCode.USE_BOOKING_CANCEL);
-        }
-        if (p.getStatus() == PaymentEntity.Status.DECLINED) {
-            throw new GeneralException(PaymentErrorCode.PAYMENT_NOT_CANCELLABLE);
-        }
-        cancel(p, reason == null ? "USER_REQUEST" : reason, true);
-        return view(p);
+        return view(cancelLocked(() -> {
+            PaymentEntity p = repository.lockByIdAndUserId(paymentId, userId).orElseThrow(() -> new GeneralException(CommonErrorCode.NOT_FOUND));
+            if (TICKET.equals(p.getOrderType())) {
+                throw new GeneralException(PaymentErrorCode.USE_BOOKING_CANCEL);
+            }
+            if (p.getStatus() == PaymentEntity.Status.DECLINED) {
+                throw new GeneralException(PaymentErrorCode.PAYMENT_NOT_CANCELLABLE);
+            }
+            return p;
+        }, reason == null ? "USER_REQUEST" : reason, true));
+    }
+
+    /** 환불 복구(CancelRecovery) — 남아 있는 환불 요청을 처음 사유 그대로 이어서 끝냅니다 */
+    public String resumeCancel(String pgOrderId) {
+        return cancelLocked(() -> repository.lockByPgOrderId(pgOrderId).orElseThrow(() -> new GeneralException(CommonErrorCode.NOT_FOUND)),
+                null, true).getStatus().name();
     }
 
     @Transactional(readOnly = true)
@@ -240,50 +245,129 @@ public class PaymentService {
     }
 
     /**
-     * PENDING → 무효화 · APPROVED → (refundApproved 일 때만) PG 환불. 이미 끝난 건은 그대로 — 멱등.
+     * 취소 — 토스 호출은 트랜잭션 밖에서 합니다 (11/17 · 승인과 같은 모양).
+     * <pre>
+     * ① 행 잠금 → 토스 없이 끝나는 건 여기서 끝 (승인 요청 전 PENDING 무효화 · 이미 끝난 건 · 만료의 APPROVED)
+     *    토스를 불러야 하면, 환불일 때 환불 요청(cancel_requested_at · 사유)을 남기고 커밋
+     * ② 토스 — 결과를 모르던 승인은 조회 · 환불이면 취소. 행 잠금 · DB 커넥션을 잡지 않음 (토스 최악 26초 동안 커넥션 풀이 묶이지 않게)
+     * ③ 다시 잠가 결과 반영 → payment.cancelled (환불 요청은 지워짐)
+     * </pre>
+     * ② 도중이나 ③ 전에 파드가 죽거나 토스가 불통 · 처리 중이면 환불 요청이 남고, 복구(CancelRecovery)가 처음 사유로 이어서 끝냅니다.
+     * 토스 취소는 결제마다 같은 멱등키라 다시 불러도 한 번만 환불됩니다. 토스가 거절하면 요청을 지우고 502 (다시 불러도 같은 거절).
      * refundApproved=false 는 만료 처리용: 만료 직전에 결제된 건을 환불하지 않고 APPROVED 를 돌려줍니다.
      */
-    private PaymentEntity.Status cancel(PaymentEntity p, String reason, boolean refundApproved) {
-        if (p.getStatus() == PaymentEntity.Status.PENDING && p.getRequestedPaymentKey() != null) {
-            resolveUnknown(p);
+    private PaymentEntity cancelLocked(Supplier<PaymentEntity> lock, String reason, boolean refundApproved) {
+        CancelStep step = tx.execute(s -> begin(lock.get(), reason, refundApproved));
+        if (step.done() != null) return step.done();
+        PgResult pg;
+        try {
+            pg = callPg(step, refundApproved);
+        } catch (GeneralException e) {
+            if (e.getErrorCode() == PaymentErrorCode.PG_CANCEL_REJECTED) {
+                tx.execute(s -> {
+                    repository.lockByPgOrderId(step.pgOrderId()).ifPresent(PaymentEntity::clearCancelRequest);
+                    return null;
+                });
+            }
+            throw e;
         }
+        return tx.execute(s -> finish(repository.lockByPgOrderId(step.pgOrderId()).orElseThrow(), step.reason(), refundApproved, pg));
+    }
+
+    /** ① — 토스 없이 끝나는 건 여기서 끝냅니다. 토스를 불러야 하면 ② · ③ 에 쓸 값만 들고 나갑니다 */
+    private CancelStep begin(PaymentEntity p, String reason, boolean refundApproved) {
         switch (p.getStatus()) {
-            case PENDING -> { }
-            case APPROVED -> {
-                if (!refundApproved) return p.getStatus();
-                gateway.cancel(p.getPaymentKey(), reason);
-            }
             case DECLINED, CANCELLED -> {
-                return p.getStatus();
+                return CancelStep.finished(p);
+            }
+            case APPROVED -> {
+                if (!refundApproved) return CancelStep.finished(p);
+            }
+            case PENDING -> {
+                if (p.getRequestedPaymentKey() == null) {   // 승인 요청을 보낸 적 없음 — 돈이 나갈 수 없으니 바로 무효화
+                    cancelled(p, reason, false);
+                    return CancelStep.finished(p);
+                }
             }
         }
-        boolean refunded = p.getStatus() == PaymentEntity.Status.APPROVED;
+        if (refundApproved) p.requestCancel(reason, OffsetDateTime.now(clock));   // ★ 토스를 부르기 전에 커밋 — 기록 전에 멈춰도 복구가 이어서 끝냄
+        return new CancelStep(null, p.getPgOrderId(), p.getStatus(), p.getPaymentKey(), p.getRequestedPaymentKey(), p.getAmount(),
+                p.getCancelReason() != null ? p.getCancelReason() : reason);
+    }
+
+    /**
+     * ② — 트랜잭션 밖. 승인 요청을 보냈지만 결과를 모르는 결제(84A)는 무효화하기 전에 토스에 묻습니다 (토스 권장: 승인 실패를 바로 단정하지 말고 조회).
+     * DONE + 주문번호 · 금액 일치 → 승인됨 (환불이면 그 키로 취소). READY · IN_PROGRESS → 아직 모름 → 503 PG_PROCESSING
+     * (토스가 인증 10분 안에 승인되지 않은 결제를 EXPIRED 로 바꾸므로 길어야 10분). 그 밖(ABORTED · EXPIRED · 토스에 없음 · 남의 결제) → 승인 안 됨.
+     */
+    private PgResult callPg(CancelStep step, boolean refundApproved) {
+        String paymentKey = step.paymentKey();
+        boolean tossApproved = false;
+        String method = null;
+        if (step.status() == PaymentEntity.Status.PENDING) {
+            PaymentGateway.Found found = gateway.find(step.requestedPaymentKey());   // 불통이면 PG_UNAVAILABLE
+            if (found != null && step.pgOrderId().equals(found.orderId())) {
+                if ("DONE".equals(found.status()) && found.totalAmount() == step.amount()) {
+                    log.warn("unknown_confirm_resolved_approved pgOrderId={}", step.pgOrderId());
+                    tossApproved = true;
+                    method = found.method();
+                    paymentKey = step.requestedPaymentKey();
+                } else if ("READY".equals(found.status()) || "IN_PROGRESS".equals(found.status())) {
+                    log.info("unknown_confirm_still_open pgOrderId={} status={}", step.pgOrderId(), found.status());
+                    throw new GeneralException(PaymentErrorCode.PG_PROCESSING);
+                }
+            }
+            if (!tossApproved) return new PgResult(false, null, false);
+        }
+        if (!refundApproved) return new PgResult(tossApproved, method, false);
+        gateway.cancel(paymentKey, step.reason());
+        return new PgResult(tossApproved, method, true);
+    }
+
+    /**
+     * ③ — 다시 잠가 기록. 그사이 다른 경로(복구 · 같은 요청의 재시도 · 승인 · 거절)가 먼저 끝냈으면 덮어쓰지 않습니다 (이벤트도 다시 내지 않음).
+     * 조회한 뒤에 승인이 기록돼 환불하지 못했으면 503 — 환불 요청이 남아 있어 다시 부르면(호출자 · 복구) 환불합니다.
+     */
+    private PaymentEntity finish(PaymentEntity p, String reason, boolean refundApproved, PgResult pg) {
+        switch (p.getStatus()) {
+            case DECLINED, CANCELLED -> {
+                return p;
+            }
+            case PENDING -> {
+                if (!pg.tossApproved()) {
+                    cancelled(p, reason, false);
+                    return p;
+                }
+                approved(p, p.getRequestedPaymentKey(), pg.method(), OffsetDateTime.now(clock));
+            }
+            case APPROVED -> { }
+        }
+        if (pg.refunded()) {
+            cancelled(p, reason, true);
+            return p;
+        }
+        if (refundApproved) throw new GeneralException(PaymentErrorCode.PG_PROCESSING);
+        return p;
+    }
+
+    private void cancelled(PaymentEntity p, String reason, boolean refunded) {
         p.cancel(reason, OffsetDateTime.now(clock));
         Map<String, Object> payload = payload(p);
         payload.put("reason", p.getDeclineReason());
         payload.put("refunded", refunded);
         eventPublisher.publish("payment.cancelled", payload);
-        return p.getStatus();
     }
 
-    /**
-     * 승인 요청을 보냈지만 결과를 모르는 결제 (84A) — 무효화하기 전에 토스에 묻습니다. 토스 권장: 승인 실패를 바로 단정하지 말고 조회.
-     * DONE + 주문번호 · 금액 일치 → 지금 승인으로 기록 (payment.completed). READY · IN_PROGRESS → 아직 모름 → 503 PG_PROCESSING
-     * (토스가 인증 10분 안에 승인되지 않은 결제를 EXPIRED 로 바꾸므로 길어야 10분). 그 밖(ABORTED · EXPIRED · 토스에 없음 · 남의 결제) → 승인 안 됨.
-     */
-    private void resolveUnknown(PaymentEntity p) {
-        PaymentGateway.Found found = gateway.find(p.getRequestedPaymentKey());   // 불통이면 PG_UNAVAILABLE
-        if (found == null || !p.getPgOrderId().equals(found.orderId())) return;
-        if ("DONE".equals(found.status()) && found.totalAmount() == p.getAmount()) {
-            log.warn("unknown_confirm_resolved_approved paymentId={}", p.getId());
-            approved(p, p.getRequestedPaymentKey(), found.method(), OffsetDateTime.now(clock));
-            return;
-        }
-        if ("READY".equals(found.status()) || "IN_PROGRESS".equals(found.status())) {
-            log.info("unknown_confirm_still_open paymentId={} status={}", p.getId(), found.status());
-            throw new GeneralException(PaymentErrorCode.PG_PROCESSING);
+    /** ① 의 결과 — done 이 있으면 끝 (토스를 부르지 않음) · 없으면 ② · ③ 에 쓸 값 */
+    private record CancelStep(PaymentEntity done, String pgOrderId, PaymentEntity.Status status, String paymentKey,
+                              String requestedPaymentKey, int amount, String reason) {
+        static CancelStep finished(PaymentEntity p) {
+            return new CancelStep(p, null, null, null, null, 0, null);
         }
     }
+
+    /** ② 의 결과 — tossApproved: 결과를 모르던 승인을 토스가 승인했음 · refunded: 토스 환불 성공 */
+    private record PgResult(boolean tossApproved, String method, boolean refunded) {}
 
     private PaymentPrepared sameRequest(PaymentEntity existing, PrepareCommand cmd) {
         if (!Objects.equals(existing.getUserId(), cmd.userId())) {

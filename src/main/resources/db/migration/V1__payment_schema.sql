@@ -9,6 +9,9 @@ CREATE TABLE payment (
     payment_key           VARCHAR(200) UNIQUE,            -- 토스 paymentKey (최대 200자) — 승인에 성공하면 채움 · NULL = 승인 전
     requested_payment_key VARCHAR(200),                   -- 승인 요청에 쓴 paymentKey (84A) — 토스 응답을 못 받아도 조회할 수 있게.
                                                           --   클라이언트가 보낸 검증 전 값이라 UNIQUE 를 걸지 않습니다
+    cancel_requested_at   TIMESTAMPTZ,                    -- 진행 중인 환불 요청 (11/17) — 토스 취소를 부르기 전에 남기고 끝나면(CANCELLED · 토스 거절) 지웁니다.
+                                                          --   남아 있으면 기록 전에 멈춘 것 → 복구(CancelRecovery)가 이어서 끝냄 · NULL = 진행 중인 환불 없음
+    cancel_reason         VARCHAR(100),                   -- 그 환불 요청의 사유 — 복구가 처음 사유 그대로 다시 부릅니다
     order_type            VARCHAR(20)  NOT NULL,          -- TICKET | GOODS (V2 ck_payment_order_type)
     order_ref             VARCHAR(50)  NOT NULL,          -- booking.id | purchase_order.id
     user_id               BIGINT       NOT NULL,          -- member.users.id (FK 없음 · 스키마 분리)
@@ -22,6 +25,7 @@ CREATE TABLE payment (
 );
 CREATE INDEX idx_payment_order ON payment(order_type, order_ref);
 CREATE INDEX idx_payment_user  ON payment(user_id, id DESC);
+CREATE INDEX idx_payment_cancel_requested ON payment(cancel_requested_at) WHERE cancel_requested_at IS NOT NULL;  -- 복구가 찾는 행만 (부분 인덱스)
 
 CREATE TABLE outbox (                                     -- 다른 서비스와 동일 구조
     id           BIGSERIAL PRIMARY KEY,

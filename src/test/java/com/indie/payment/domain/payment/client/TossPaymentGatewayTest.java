@@ -184,6 +184,18 @@ class TossPaymentGatewayTest {
         assertThatCode(() -> gateway.cancel("pk_1", "USER_CANCEL")).doesNotThrowAnyException();
     }
 
+    /** 같은 결제의 앞선 취소가 처리 중(409) — 거절이 아니라 503 (환불 요청을 지우지 않아 복구가 다시 부름) */
+    @Test
+    void cancelStillProcessingIsUnknownNotRejected() {
+        server.expect(requestTo(BASE + "/v1/payments/pk_1/cancel"))
+                .andRespond(withStatus(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"code\":\"IDEMPOTENT_REQUEST_PROCESSING\",\"message\":\"이전 멱등 요청이 처리중입니다.\"}"));
+
+        assertThatThrownBy(() -> gateway.cancel("pk_1", "USER_CANCEL"))
+                .isInstanceOfSatisfying(GeneralException.class,
+                        e -> assertThat(e.getErrorCode().getCode()).isEqualTo("PG_PROCESSING"));
+    }
+
     @Test
     void cancelRejectedKeepsPaymentApproved() {
         server.expect(requestTo(BASE + "/v1/payments/pk_1/cancel"))

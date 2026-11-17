@@ -138,6 +138,10 @@ public class TossPaymentGateway implements PaymentGateway {
                         if (res.getStatusCode().is4xxClientError()) {
                             TossError error = res.bodyTo(TossError.class);
                             if (error != null && "ALREADY_CANCELED_PAYMENT".equals(error.code())) return null;   // 개발자센터에서 먼저 취소한 경우 등
+                            if (error != null && IDEMPOTENT_REQUEST_PROCESSING.equals(error.code())) {
+                                // 같은 결제의 앞선 취소(재시도 · 복구)가 아직 처리 중 — 거절이 아니라 "모름" (거절로 보면 환불 요청을 지워 복구가 멈춤)
+                                throw new GeneralException(PaymentErrorCode.PG_PROCESSING);
+                            }
                             log.warn("toss_cancel_rejected paymentKey={} code={} message={}", paymentKey,
                                     error == null ? null : error.code(), error == null ? null : error.message());
                             throw new GeneralException(PaymentErrorCode.PG_CANCEL_REJECTED);

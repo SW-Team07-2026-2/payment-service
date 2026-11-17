@@ -3,6 +3,7 @@ package com.indie.payment.domain.payment.repository;
 import com.indie.payment.domain.payment.entity.PaymentEntity;
 import org.springframework.data.domain.Limit;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -36,4 +37,7 @@ public interface PaymentRepository {
 
     /** 같은 주문의 마지막 결제를 잠급니다 */
     Optional<PaymentEntity> lockByOrder(String orderType, String orderRef);
+
+    /** 환불 복구 — 환불 요청을 cutoff 전에 남긴 채 끝나지 않은 결제 (오래된 것부터) */
+    List<PaymentEntity> findByCancelRequestedAtBeforeOrderByCancelRequestedAtAsc(OffsetDateTime cutoff, Limit limit);
 }
