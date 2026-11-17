@@ -9,6 +9,7 @@ import com.indie.payment.global.common.exception.GeneralException;
 import com.indie.payment.global.config.PaymentProperties;
 import com.indie.payment.global.event.EventPublisher;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -26,8 +27,12 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -41,7 +46,7 @@ class PaymentServiceTest {
     /** 콜백 실행 중 — 토스 호출이 트랜잭션 밖인지 확인용 */
     private boolean inTransaction;
     private final PaymentService service = new PaymentService(repository, gateway, eventPublisher, new ObjectMapper(),
-            passThrough(), new PaymentProperties(null, new PaymentProperties.Payment(10), null, null, null), Clock.systemUTC());
+            passThrough(), new PaymentProperties(null, new PaymentProperties.Payment(10, 60, 30000), null, null, null), Clock.systemUTC());
 
     /** 같은 주문으로 다시 준비할 때 사용자 · 금액이 다르면 코드가 따로 (둘 다 409) */
     @Test
@@ -248,11 +253,95 @@ class PaymentServiceTest {
         verify(eventPublisher, never()).publish(eq("payment.completed"), any());
     }
 
+    /** ★ 11/17 — 환불도 토스는 트랜잭션 밖에서 부르고, 그 전에 환불 요청이 커밋돼 있습니다. 끝나면 요청을 지웁니다 */
+    @Test
+    void refundCallsTossOutsideTransactionAfterRequestIsCommitted() {
+        PaymentEntity goods = approvedGoods();
+        doAnswer(inv -> {
+            assertThat(inTransaction).isFalse();
+            assertThat(commits).hasValue(1);
+            assertThat(goods.getCancelRequestedAt()).isNotNull();
+            return null;
+        }).when(gateway).cancel("pk_g", "USER_REQUEST");
+
+        assertThat(service.cancelByUser(7L, 2L, null).status()).isEqualTo("CANCELLED");
+        assertThat(goods.getCancelRequestedAt()).isNull();
+        verify(eventPublisher).publish(eq("payment.cancelled"), argThat(m -> Boolean.TRUE.equals(m.get("refunded"))));
+    }
+
+    /** ★ 토스 환불 도중 · 기록 전에 멈추면 환불 요청이 남고, 복구가 처음 사유로 다시 취소해 끝냅니다 (토스 멱등키 — 환불은 한 번) */
+    @Test
+    void refundLeftUnrecordedIsFinishedByRecovery() {
+        PaymentEntity goods = approvedGoods();
+        doThrow(new IllegalStateException("pod killed")).doNothing().when(gateway).cancel("pk_g", "CHANGED_MIND");
+
+        assertThatThrownBy(() -> service.cancelByUser(7L, 2L, "CHANGED_MIND")).hasMessage("pod killed");
+        assertThat(goods.getStatus()).isEqualTo(PaymentEntity.Status.APPROVED);
+        assertThat(goods.getCancelRequestedAt()).isNotNull();
+        verify(eventPublisher, never()).publish(anyString(), any());
+
+        assertThat(service.resumeCancel("GOODS-1")).isEqualTo("CANCELLED");
+        assertThat(goods.getDeclineReason()).isEqualTo("CHANGED_MIND");
+        assertThat(goods.getCancelRequestedAt()).isNull();
+        verify(gateway, times(2)).cancel("pk_g", "CHANGED_MIND");
+        verify(eventPublisher).publish(eq("payment.cancelled"), any());
+    }
+
+    /** 토스가 환불을 거절하면 요청을 지우고 502 — 다시 불러도 같은 거절이라 복구가 되풀이하지 않게 */
+    @Test
+    void rejectedRefundClearsRequest() {
+        PaymentEntity goods = approvedGoods();
+        doThrow(new GeneralException(PaymentErrorCode.PG_CANCEL_REJECTED)).when(gateway).cancel("pk_g", "USER_REQUEST");
+
+        assertThatThrownBy(() -> service.cancelByUser(7L, 2L, null))
+                .isInstanceOfSatisfying(GeneralException.class, e -> assertThat(e.getErrorCode().getCode()).isEqualTo("PG_CANCEL_REJECTED"));
+        assertThat(goods.getStatus()).isEqualTo(PaymentEntity.Status.APPROVED);
+        assertThat(goods.getCancelRequestedAt()).isNull();
+        verify(eventPublisher, never()).publish(anyString(), any());
+    }
+
+    /** 토스를 기다리는 사이 다른 요청(복구 · 재시도)이 먼저 기록했으면 payment.cancelled 를 두 번 내지 않습니다 */
+    @Test
+    void refundRecordedMeanwhileIsNotRecordedTwice() {
+        PaymentEntity goods = approvedGoods();
+        doAnswer(inv -> {
+            goods.cancel("USER_REQUEST", OffsetDateTime.now());
+            return null;
+        }).when(gateway).cancel("pk_g", "USER_REQUEST");
+
+        assertThat(service.cancelByUser(7L, 2L, null).status()).isEqualTo("CANCELLED");
+        verify(eventPublisher, never()).publish(anyString(), any());
+    }
+
+    /** 예매 취소(환불)에서 결과를 모르던 승인을 토스가 승인했으면 승인으로 기록하고 그 키로 환불 — completed 뒤 cancelled(refunded) */
+    @Test
+    void refundOfUnknownApprovalRecordsApprovalThenRefunds() {
+        PaymentEntity ticket = unknownTicket();
+        when(gateway.find("pk_1")).thenReturn(new PaymentGateway.Found("TICKET-1", "DONE", "카드", 55000));
+
+        assertThat(service.cancelByOrder("TICKET", "42", "USER_CANCEL", true)).isEqualTo("CANCELLED");
+        assertThat(ticket.getPaymentKey()).isEqualTo("pk_1");
+        verify(gateway).cancel("pk_1", "USER_CANCEL");
+        InOrder events = inOrder(eventPublisher);
+        events.verify(eventPublisher).publish(eq("payment.completed"), any());
+        events.verify(eventPublisher).publish(eq("payment.cancelled"), argThat(m -> Boolean.TRUE.equals(m.get("refunded"))));
+    }
+
+    /** 결과를 모르는 결제 — 취소 ①(lockByOrder) · ③(lockByPgOrderId) 이 같은 행을 잠그게 */
     private PaymentEntity unknownTicket() {
-        PaymentEntity ticket = ticket();
+        PaymentEntity ticket = lockedTicket();
         ticket.requestConfirm("pk_1");
-        when(repository.lockByOrder("TICKET", "42")).thenReturn(Optional.of(ticket));
         return ticket;
+    }
+
+    /** 승인된 굿즈 결제 — P4 ①(lockByIdAndUserId) · ③(lockByPgOrderId) 이 같은 행을 잠그게 */
+    private PaymentEntity approvedGoods() {
+        PaymentEntity goods = new PaymentEntity(UUID.randomUUID(), "GOODS-1", "GOODS", "9", 7L, 30000, null, OffsetDateTime.now());
+        ReflectionTestUtils.setField(goods, "id", 2L);
+        goods.approve("pk_g", "카드", OffsetDateTime.now());
+        when(repository.lockByIdAndUserId(2L, 7L)).thenReturn(Optional.of(goods));
+        when(repository.lockByPgOrderId("GOODS-1")).thenReturn(Optional.of(goods));
+        return goods;
     }
 
     /** 승인 ①(lockByOrder) · ③(lockByPgOrderId) 이 같은 행을 잠그게 */

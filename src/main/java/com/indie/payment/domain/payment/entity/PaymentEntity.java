@@ -43,6 +43,12 @@ public class PaymentEntity {
     @Column(length = 200)
     private String requestedPaymentKey;
 
+    /** 진행 중인 환불 요청 (11/17) — 토스 취소를 부르기 전에 남기고 끝나면 지웁니다. 남아 있으면 복구(CancelRecovery)가 이어서 끝냅니다 */
+    private OffsetDateTime cancelRequestedAt;
+
+    /** 그 환불 요청의 사유 — 처음 사유를 유지합니다 (토스 취소 멱등키가 결제마다 같아 첫 요청이 기준) */
+    private String cancelReason;
+
     private String orderType;
 
     private String orderRef;
@@ -95,12 +101,25 @@ public class PaymentEntity {
         this.status = Status.DECLINED;
         this.declineReason = truncate(reason);
         this.completedAt = now;
+        clearCancelRequest();
     }
 
     public void cancel(String reason, OffsetDateTime now) {
         this.status = Status.CANCELLED;
         this.declineReason = truncate(reason);
         this.completedAt = now;
+        clearCancelRequest();
+    }
+
+    /** 요청할 때마다 시각을 새로 찍습니다 — 복구는 이 시각이 오래된 것만 집습니다 (진행 중인 요청과 겹치지 않게) */
+    public void requestCancel(String reason, OffsetDateTime now) {
+        if (this.cancelReason == null) this.cancelReason = truncate(reason);
+        this.cancelRequestedAt = now;
+    }
+
+    public void clearCancelRequest() {
+        this.cancelRequestedAt = null;
+        this.cancelReason = null;
     }
 
     private static String truncate(String reason) {
@@ -111,6 +130,8 @@ public class PaymentEntity {
     public String getPgOrderId() { return pgOrderId; }
     public String getPaymentKey() { return paymentKey; }
     public String getRequestedPaymentKey() { return requestedPaymentKey; }
+    public OffsetDateTime getCancelRequestedAt() { return cancelRequestedAt; }
+    public String getCancelReason() { return cancelReason; }
     public String getOrderType() { return orderType; }
     public String getOrderRef() { return orderRef; }
     public Long getUserId() { return userId; }
