@@ -13,6 +13,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Limit;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -86,6 +87,22 @@ class PaymentSchemaTest {
         assertThat(repository.findFirstByOrderTypeAndOrderRefOrderByIdDesc("TICKET", "9")).get()
                 .extracting(PaymentEntity::getId).isEqualTo(retry.getId());
         assertThat(repository.countByOrderTypeAndOrderRef("TICKET", "9")).isEqualTo(2);
+    }
+
+    /** 11/17 환불 복구 — 환불 요청을 cutoff 전에 남긴 결제만 (요청 없는 행 · 방금 요청한 행은 제외) */
+    @Test
+    void recoveryFindsOnlyStaleCancelRequests() {
+        OffsetDateTime now = OffsetDateTime.now();
+        PaymentEntity stale = repository.save(new PaymentEntity(UUID.randomUUID(), "GOODS-r1", "GOODS", "11", 7L, 1000, null, now));
+        stale.requestCancel("USER_REQUEST", now.minusMinutes(5));
+        PaymentEntity fresh = repository.save(new PaymentEntity(UUID.randomUUID(), "GOODS-r2", "GOODS", "12", 7L, 1000, null, now));
+        fresh.requestCancel("USER_REQUEST", now);
+        repository.save(new PaymentEntity(UUID.randomUUID(), "GOODS-r3", "GOODS", "13", 7L, 1000, null, now));
+        em.flush();
+        em.clear();
+
+        assertThat(repository.findByCancelRequestedAtBeforeOrderByCancelRequestedAtAsc(now.minusMinutes(1), Limit.of(20)))
+                .extracting(PaymentEntity::getPgOrderId).containsExactly("GOODS-r1");
     }
 
     /** ★ V2 의 CHECK 값 목록 = Java 쪽 값 — 한쪽만 고치면 여기서 깨집니다 */

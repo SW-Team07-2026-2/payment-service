@@ -65,6 +65,8 @@ app:
     clock-skew-seconds: 30
   payment:
     ttl-minutes: 15                           # prepare 후 이 시간 안에 confirm 해야 합니다 (Catalog 주문 만료와 같은 값)
+    cancel-retry-after-seconds: 60            # 환불 요청이 이만큼 끝나지 않으면 복구(CancelRecovery)가 이어서 — 토스 최악 26초보다 길게 (11/17)
+    cancel-retry-interval-ms: 30000           # 복구 주기
   toss:                                       # 시크릿 키는 /etc/secrets/toss.secret-key (test_… 만 — TossPaymentGateway)
     base-url: https://api.tosspayments.com
     connect-timeout-ms: 3000

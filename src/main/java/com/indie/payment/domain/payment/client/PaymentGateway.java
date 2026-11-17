@@ -13,7 +13,7 @@ public interface PaymentGateway {
      */
     ConfirmResult confirm(String paymentKey, String orderId, int amount, String testCode);
 
-    /** 전액 취소(환불) — 이미 취소된 결제면 그대로 성공입니다 */
+    /** 전액 취소(환불) — 이미 취소된 결제면 그대로 성공 · 같은 결제의 앞선 취소가 처리 중이면 PG_PROCESSING · 토스가 거절하면 PG_CANCEL_REJECTED */
     void cancel(String paymentKey, String reason);
 
     /** paymentKey 로 결제 조회 — 토스에 없으면 null · 불통이면 PG_UNAVAILABLE (11/04 84A — 결과를 모르는 승인을 정리할 때) */
