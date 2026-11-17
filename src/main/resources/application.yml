@@ -52,6 +52,7 @@ management:
     group:
       readiness.include: db
       liveness.include: ping
+  metrics.distribution.slo.http.server.requests: 10ms,25ms,50ms,100ms,200ms,300ms,500ms,750ms,1s,2s,3s,5s,10s   # 응답 시간 p95 · p99 (Grafana) — 구간을 고정해 지표 수를 묶습니다
 
 springdoc:
   api-docs.enabled: false                     # 운영 노출 안 함 — local 에서만 켭니다
