@@ -224,6 +224,12 @@ public class PaymentService {
                 null, true).getStatus().name();
     }
 
+    /** 결제 대기 만료 정리(PendingExpiry) — 만료 취소와 같습니다 (refundApproved=false · 그사이 승인됐으면 APPROVED 그대로) */
+    public String expirePending(String pgOrderId) {
+        return cancelLocked(() -> repository.lockByPgOrderId(pgOrderId).orElseThrow(() -> new GeneralException(CommonErrorCode.NOT_FOUND)),
+                "PENDING_EXPIRED", false).getStatus().name();
+    }
+
     @Transactional(readOnly = true)
     public PaymentView get(long userId, long paymentId) {
         return view(repository.findByIdAndUserId(paymentId, userId).orElseThrow(() -> new GeneralException(CommonErrorCode.NOT_FOUND)));
