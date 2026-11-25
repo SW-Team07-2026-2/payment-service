@@ -40,4 +40,8 @@ public interface PaymentRepository {
 
     /** 환불 복구 — 환불 요청을 cutoff 전에 남긴 채 끝나지 않은 결제 (오래된 것부터) */
     List<PaymentEntity> findByCancelRequestedAtBeforeOrderByCancelRequestedAtAsc(OffsetDateTime cutoff, Limit limit);
+
+    /** 결제 대기 만료 정리 — 승인 요청을 보낸 적 없이 cutoff 전에 준비한 결제 (오래된 것부터) */
+    List<PaymentEntity> findByStatusAndRequestedPaymentKeyIsNullAndRequestedAtBeforeOrderByRequestedAtAsc(
+            PaymentEntity.Status status, OffsetDateTime cutoff, Limit limit);
 }

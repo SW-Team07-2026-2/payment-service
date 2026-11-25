@@ -46,7 +46,7 @@ class PaymentServiceTest {
     /** 콜백 실행 중 — 토스 호출이 트랜잭션 밖인지 확인용 */
     private boolean inTransaction;
     private final PaymentService service = new PaymentService(repository, gateway, eventPublisher, new ObjectMapper(),
-            passThrough(), new PaymentProperties(null, new PaymentProperties.Payment(10, 60, 30000), null, null, null), Clock.systemUTC());
+            passThrough(), new PaymentProperties(null, new PaymentProperties.Payment(10, 60, 30000, 120, 60000), null, null, null), Clock.systemUTC());
 
     /** 같은 주문으로 다시 준비할 때 사용자 · 금액이 다르면 코드가 따로 (둘 다 409) */
     @Test
@@ -251,6 +251,29 @@ class PaymentServiceTest {
         assertThat(service.cancelByOrder("TICKET", "42", "EXPIRED", false)).isEqualTo("CANCELLED");
         assertThat(othersDone.getPaymentKey()).isNull();
         verify(eventPublisher, never()).publish(eq("payment.completed"), any());
+    }
+
+    /** ✏️ 11/25 결제 대기 만료 정리 — 승인 요청이 없던 결제는 토스를 부르지 않고 무효화, payment.cancelled(refunded=false) */
+    @Test
+    void pendingExpiryCancelsWithoutToss() {
+        PaymentEntity ticket = lockedTicket();
+
+        assertThat(service.expirePending("TICKET-1")).isEqualTo("CANCELLED");
+        assertThat(ticket.getStatus()).isEqualTo(PaymentEntity.Status.CANCELLED);
+        verify(gateway, never()).find(anyString());
+        verify(gateway, never()).cancel(anyString(), anyString());
+        verify(eventPublisher).publish(eq("payment.cancelled"), argThat(m -> Boolean.FALSE.equals(m.get("refunded"))));
+    }
+
+    /** 고르는 사이 승인됐으면 환불하지 않고 APPROVED 그대로 */
+    @Test
+    void pendingExpiryLeavesApprovedPayment() {
+        PaymentEntity ticket = lockedTicket();
+        ticket.approve("pk_1", "카드", OffsetDateTime.now());
+
+        assertThat(service.expirePending("TICKET-1")).isEqualTo("APPROVED");
+        verify(gateway, never()).cancel(anyString(), anyString());
+        verify(eventPublisher, never()).publish(anyString(), any());
     }
 
     /** ★ 11/17 — 환불도 토스는 트랜잭션 밖에서 부르고, 그 전에 환불 요청이 커밋돼 있습니다. 끝나면 요청을 지웁니다 */
