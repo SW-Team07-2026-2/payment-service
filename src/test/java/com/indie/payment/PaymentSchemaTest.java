@@ -105,6 +105,24 @@ class PaymentSchemaTest {
                 .extracting(PaymentEntity::getPgOrderId).containsExactly("GOODS-r1");
     }
 
+    /** ✏️ 11/25 결제 대기 만료 정리 — cutoff 전에 준비했고 승인 요청이 없는 PENDING 만 (승인 요청 보낸 행 · 방금 준비한 행 · 끝난 행은 제외) */
+    @Test
+    void pendingExpiryFindsOnlyStaleUnrequestedPending() {
+        OffsetDateTime now = OffsetDateTime.now();
+        repository.save(new PaymentEntity(UUID.randomUUID(), "TICKET-e1", "TICKET", "21", 7L, 1000, null, now.minusMinutes(30)));
+        repository.save(new PaymentEntity(UUID.randomUUID(), "TICKET-e2", "TICKET", "22", 7L, 1000, null, now.minusMinutes(30)))
+                .requestConfirm("pk_e2");
+        repository.save(new PaymentEntity(UUID.randomUUID(), "TICKET-e3", "TICKET", "23", 7L, 1000, null, now));
+        repository.save(new PaymentEntity(UUID.randomUUID(), "TICKET-e4", "TICKET", "24", 7L, 1000, null, now.minusMinutes(30)))
+                .cancel("EXPIRED", now);
+        em.flush();
+        em.clear();
+
+        assertThat(repository.findByStatusAndRequestedPaymentKeyIsNullAndRequestedAtBeforeOrderByRequestedAtAsc(
+                PaymentEntity.Status.PENDING, now.minusMinutes(17), Limit.of(100)))
+                .extracting(PaymentEntity::getPgOrderId).containsExactly("TICKET-e1");
+    }
+
     /** ★ V2 의 CHECK 값 목록 = Java 쪽 값 — 한쪽만 고치면 여기서 깨집니다 */
     @Test
     void checkConstraintValuesMatchJavaEnums() {

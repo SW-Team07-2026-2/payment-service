@@ -25,7 +25,7 @@ class CancelRecoveryTest {
     private final PaymentRepository repository = mock(PaymentRepository.class);
     private final PaymentService paymentService = mock(PaymentService.class);
     private final CancelRecovery recovery = new CancelRecovery(repository, paymentService,
-            new PaymentProperties(null, new PaymentProperties.Payment(15, 60, 30000), null, null, null),
+            new PaymentProperties(null, new PaymentProperties.Payment(15, 60, 30000, 120, 60000), null, null, null),
             Clock.fixed(Instant.parse("2026-11-17T03:00:00Z"), ZoneOffset.UTC));
 
     /** 환불 요청이 60초 넘게 남은 결제만 이어서 끝내고, 한 건이 실패해도 다음 건으로 넘어갑니다 */
