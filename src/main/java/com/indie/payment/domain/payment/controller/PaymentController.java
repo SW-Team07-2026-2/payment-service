@@ -50,14 +50,14 @@ public class PaymentController {
         return ApiResponse.onSuccess(paymentService.list(userId, Cursor.decode(cursor), pageSize.resolve(size)));
     }
 
-    @GetMapping("/api/payments/{id}")
-    public ApiResponse<PaymentView> get(@CurrentUser Long userId, @PathVariable @Positive long id) {
-        return ApiResponse.onSuccess(paymentService.get(userId, id));
+    @GetMapping("/api/payments/{paymentId}")
+    public ApiResponse<PaymentView> get(@CurrentUser Long userId, @PathVariable @Positive long paymentId) {
+        return ApiResponse.onSuccess(paymentService.get(userId, paymentId));
     }
 
-    @PostMapping("/api/payments/{id}/cancel")
-    public ApiResponse<PaymentView> cancel(@CurrentUser Long userId, @PathVariable @Positive long id,
+    @PostMapping("/api/payments/{paymentId}/cancel")
+    public ApiResponse<PaymentView> cancel(@CurrentUser Long userId, @PathVariable @Positive long paymentId,
                                              @Valid @RequestBody(required = false) PaymentCancelRequest request) {
-        return ApiResponse.onSuccess(paymentService.cancelByUser(userId, id, request == null ? null : request.reason()));
+        return ApiResponse.onSuccess(paymentService.cancelByUser(userId, paymentId, request == null ? null : request.reason()));
     }
 }
