@@ -16,9 +16,12 @@ COPY --from=build /app/build/libs/*.jar app.jar
 USER app
 EXPOSE 8084 8094
 # MaxMetaspaceSize 160m — JPA 를 씁니다 (Member 와 같은 값)
+# ✏️ 11/26 PC 24시간 — SerialGC(GC 스레드 1개) 멈춤 최대 0.72초 (젊은 영역만으로도 0.44초)
+#   → ParallelGC: CPU 한도만큼 스레드로 나눠 짧게 (concert · gateway · catalog 와 같게). CPU 한도 1코어 이하(AWS)면 SerialGC 와 같습니다
+#   GC 는 JAVA_TOOL_OPTIONS 로 못 바꿉니다 — 여기 플래그가 뒤에 와서 두 GC 가 함께 켜져 기동 실패
 ENTRYPOINT ["java", \
   "-XX:MaxRAMPercentage=70", \
-  "-XX:+UseSerialGC", \
+  "-XX:+UseParallelGC", \
   "-XX:MaxMetaspaceSize=160m", \
   "-Duser.timezone=Asia/Seoul", \
   "-Dfile.encoding=UTF-8", \
