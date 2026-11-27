@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Map;
 
 /**
- * 이벤트를 업무 데이터와 <b>같은 트랜잭션</b>에 INSERT 합니다 — DB 커밋은 됐는데 Kafka 발행이 실패해
+ * 이벤트를 업무 데이터와 <b>같은 트랜잭션</b>에 INSERT 합니다 - DB 커밋은 됐는데 Kafka 발행이 실패해
  * 데이터와 이벤트가 어긋나는 일이 없습니다. 트랜잭션 밖에서 부르면 예외 (MANDATORY).
  */
 @Component

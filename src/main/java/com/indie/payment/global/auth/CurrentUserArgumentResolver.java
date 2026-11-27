@@ -12,9 +12,9 @@ import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
 /**
- * X-User-Id → Long. Payment 는 자기 앞의 요청이 인증됐다고 가정합니다 — 헤더가 곧 신원이고,
+ * X-User-Id -> Long. Payment 는 자기 앞의 요청이 인증됐다고 가정합니다 - 헤더가 곧 신원이고,
  * 그 헤더를 Gateway 만 붙일 수 있게 하는 것은 NetworkPolicy 의 책임입니다.
- * 헤더가 없으면 401 + WARN — 이 로그가 찍히면 Gateway 우회 또는 라우트 설정 오류입니다.
+ * 헤더가 없으면 401 + WARN - 이 로그가 찍히면 Gateway 우회 또는 라우트 설정 오류입니다.
  */
 @Component
 public class CurrentUserArgumentResolver implements HandlerMethodArgumentResolver {

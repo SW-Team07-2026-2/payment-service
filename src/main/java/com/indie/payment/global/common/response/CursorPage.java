@@ -5,7 +5,7 @@ import com.indie.payment.global.common.util.Cursor;
 import java.util.List;
 import java.util.function.Function;
 
-/** 커서 페이지 응답 — { items, nextCursor, hasNext } */
+/** 커서 페이지 응답 - { items, nextCursor, hasNext } */
 public record CursorPage<T>(List<T> items, String nextCursor, boolean hasNext) {
 
     /** size + 1 건을 조회해 넘긴 결과로 다음 페이지 유무를 판단합니다 */

@@ -1,26 +1,38 @@
 package com.indie.payment.domain.payment.client;
 
 /**
- * PG 어댑터 (15 §5.3) — 구현은 TossPaymentGateway.
- * 금액 대조 · 멱등 · 상태 전이 · Outbox · 보상 트리거는 전부 PaymentService 에 있고, PG 가 바뀌어도 그대로입니다.
- * 결제 준비(prepare)는 PG 를 부르지 않습니다 — 토스는 paymentKey 를 결제창 인증 뒤에 발급하고, 그 전에는 우리 주문번호만 있습니다.
+ * PaymentService -> PG 호출 포트. 구현은 TossPaymentGateway입니다.
+ * 금액 검증과 결제 상태 관리는 PaymentService에서 처리하며 결제 준비 때는 PG를 호출하지 않습니다.
  */
 public interface PaymentGateway {
 
     /**
-     * 결제 승인 — orderId 는 우리가 만든 PG 주문번호(pg_order_id), amount 는 prepare 때 저장한 금액입니다.
-     * testCode — 테스트용 강제 실패 (X-Force-Decline). 로컬 프로필(app.toss.allow-test-code)에서만 보내고 운영은 무시합니다.
+     * 저장된 주문 금액으로 PG 승인을 요청합니다.
+     *
+     * @param paymentKey 토스 결제창 인증 후 발급된 결제 키
+     * @param orderId PG 주문번호
+     * @param amount 결제 금액(원)
+     * @param testCode 로컬 테스트용 PG 강제 거절 코드
      */
     ConfirmResult confirm(String paymentKey, String orderId, int amount, String testCode);
 
-    /** 전액 취소(환불) — 이미 취소된 결제면 그대로 성공 · 같은 결제의 앞선 취소가 처리 중이면 PG_PROCESSING · 토스가 거절하면 PG_CANCEL_REJECTED */
+    /**
+     * PG에 전액 취소를 요청합니다. 이미 취소됐으면 성공하며 처리 중이거나 거절되면 예외를 반환합니다.
+     *
+     * @param paymentKey 토스 결제창 인증 후 발급된 결제 키
+     * @param reason 취소 또는 재고 변경 사유
+     */
     void cancel(String paymentKey, String reason);
 
-    /** paymentKey 로 결제 조회 — 토스에 없으면 null · 불통이면 PG_UNAVAILABLE (11/04 84A — 결과를 모르는 승인을 정리할 때) */
+    /**
+     * PG 결제를 조회합니다. 결제가 없으면 null, 통신 실패면 PG_UNAVAILABLE 예외를 반환합니다.
+     *
+     * @param paymentKey 토스 결제창 인증 후 발급된 결제 키
+     */
     Found find(String paymentKey);
 
     record ConfirmResult(boolean approved, String method, String declineReason) {}
 
-    /** status = 토스 결제 상태 (READY · IN_PROGRESS · DONE · ABORTED · EXPIRED · CANCELED …) */
+    /** status = 토스 결제 상태 (READY, IN_PROGRESS, DONE, ABORTED, EXPIRED, CANCELED ...) */
     record Found(String orderId, String status, String method, int totalAmount) {}
 }
