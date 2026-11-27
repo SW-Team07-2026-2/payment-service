@@ -2,13 +2,13 @@
 <configuration>
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 
-    <!-- 로컬 — 사람이 읽는 한 줄 -->
+    <!-- 로컬 - 사람이 읽는 한 줄 -->
     <springProfile name="local">
         <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
         <root level="INFO"><appender-ref ref="CONSOLE"/></root>
     </springProfile>
 
-    <!-- 그 외 — JSON 1줄 + correlationId. 🔴 토큰 · 쿠키 · Set-Cookie 는 마스킹 -->
+    <!-- 그 외 - JSON 1줄 + correlationId. 토큰, 쿠키, Set-Cookie 는 마스킹 -->
     <springProfile name="!local">
         <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
             <encoder class="net.logstash.logback.encoder.LogstashEncoder">

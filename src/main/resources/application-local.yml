@@ -1,9 +1,9 @@
 spring:
-  # 로컬 시크릿도 운영과 같은 방식 — ./local-secrets/ 의 파일 이름이 프로퍼티 키 (../local/setup-secrets.sh)
+  # 로컬 시크릿도 운영과 같은 방식 - ./local-secrets/ 의 파일 이름이 프로퍼티 키 (../local/setup-secrets.sh)
   config.import: optional:configtree:./local-secrets/
-  # 🔴 로컬 DB 도 payment_svc 유저로 붙습니다 (postgres 수퍼유저면 스키마 경계 위반이 로컬에서 통과합니다)
+  # 로컬 DB 도 payment_svc 유저로 붙습니다 (postgres 수퍼유저면 스키마 경계 위반이 로컬에서 통과합니다)
   datasource.url: jdbc:postgresql://localhost:5432/indie_db?currentSchema=payment&ApplicationName=payment
-  # 로컬도 운영과 같이 Flyway(V1 구조 · V2 값) + validate 입니다. 마이그레이션 파일을 고쳤으면 로컬 DB 의 payment 스키마를 비우고 다시 띄웁니다
+  # 로컬도 운영과 같이 Flyway(V1 구조, V2 값) + validate 입니다. 마이그레이션 파일을 고쳤으면 로컬 DB 의 payment 스키마를 비우고 다시 띄웁니다
   kafka.bootstrap-servers: localhost:9092
 
 springdoc:
@@ -15,4 +15,4 @@ logging:
 
 app:
   toss:
-    allow-test-code: true                     # X-Force-Decline → 토스 TossPayments-Test-Code (실패 화면 확인용 · 운영은 false)
+    allow-test-code: true                     # X-Force-Decline -> 토스 TossPayments-Test-Code (실패 화면 확인용, 운영은 false)

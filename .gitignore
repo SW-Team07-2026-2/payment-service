@@ -3,5 +3,5 @@ build/
 .idea/
 *.iml
 .DS_Store
-# 🔴 시크릿 — 절대 커밋하지 않습니다
+# 시크릿 - 절대 커밋하지 않습니다
 local-secrets/
