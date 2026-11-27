@@ -5,17 +5,17 @@ spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST}:5432/indie_db?currentSchema=payment&ApplicationName=payment
     username: payment_svc
-    password: ${db.password}                  # ← configtree 파일
+    password: ${db.password}                  # <- configtree 파일
     hikari:
-      maximum-pool-size: 5                    # ★ DB 쪽 CONNECTION LIMIT 15 / replica 2 (11 §9)
+      maximum-pool-size: 5                    # DB 쪽 CONNECTION LIMIT 15 / replica 2 (11 §9)
       minimum-idle: 2
       connection-timeout: 3000
-      max-lifetime: 1500000                   # 25분 — RDS 쪽보다 짧게
+      max-lifetime: 1500000                   # 25분 - RDS 쪽보다 짧게
       leak-detection-threshold: 20000
 
   jpa:
-    open-in-view: false                       # ★ 커넥션 점유 방지
-    hibernate.ddl-auto: validate              # 🔴 none/update 아님 — Flyway 와 불일치를 잡는다 (로컬만 update)
+    open-in-view: false                       # 커넥션 점유 방지
+    hibernate.ddl-auto: validate              # none/update 아님 - Flyway 와 불일치를 잡는다 (로컬만 update)
     properties:
       hibernate:
         default_schema: payment
@@ -25,10 +25,10 @@ spring:
     enabled: true
     schemas: payment
     default-schema: payment
-    baseline-on-migrate: false                # 🔴 true 는 기존 테이블을 조용히 건너뜁니다
+    baseline-on-migrate: false                # true 는 기존 테이블을 조용히 건너뜁니다
     validate-on-migrate: true
 
-  kafka:                                      # 발행만 — 구독하는 토픽이 없습니다
+  kafka:                                      # 발행만 - 구독하는 토픽이 없습니다
     bootstrap-servers: ${KAFKA_SERVERS}
     producer:
       acks: all
@@ -52,29 +52,29 @@ management:
     group:
       readiness.include: db
       liveness.include: ping
-  metrics.distribution.slo.http.server.requests: 10ms,25ms,50ms,100ms,200ms,300ms,500ms,750ms,1s,2s,3s,5s,10s   # 응답 시간 p95 · p99 (Grafana) — 구간을 고정해 지표 수를 묶습니다
+  metrics.distribution.slo.http.server.requests: 10ms,25ms,50ms,100ms,200ms,300ms,500ms,750ms,1s,2s,3s,5s,10s   # 응답 시간 p95, p99 (Grafana) - 구간을 고정해 지표 수를 묶습니다
 
 springdoc:
-  api-docs.enabled: false                     # 운영 노출 안 함 — local 에서만 켭니다
+  api-docs.enabled: false                     # 운영 노출 안 함 - local 에서만 켭니다
   swagger-ui.enabled: false
 
 app:
   internal:
     expected-audience: payment
-    allowed-issuers: [catalog, concert]       # 결제 준비 · 취소를 부르는 쪽 (11 §7)
-    admin-issuers: [studio]                   # /internal/admin/** 만 — 관리자(Studio) CS 조회
+    allowed-issuers: [catalog, concert]       # 결제 준비, 취소를 부르는 쪽 (11 §7)
+    admin-issuers: [studio]                   # /internal/admin/** 만 - 관리자(Studio) CS 조회
     clock-skew-seconds: 30
   payment:
     ttl-minutes: 15                           # prepare 후 이 시간 안에 confirm 해야 합니다 (Catalog 주문 만료와 같은 값)
-    cancel-retry-after-seconds: 60            # 환불 요청이 이만큼 끝나지 않으면 복구(CancelRecovery)가 이어서 — 토스 최악 26초보다 길게 (11/17)
+    cancel-retry-after-seconds: 60            # 환불 요청이 이만큼 끝나지 않으면 복구(CancelRecovery)가 이어서 - 토스 최악 26초보다 길게
     cancel-retry-interval-ms: 30000           # 복구 주기
-    expiry-grace-seconds: 120                 # ✏️ 11/25 결제 대기 만료 정리(PendingExpiry) — ttl 뒤 2분 더 (주문 쪽 만료 · Catalog 60초 주기가 먼저 돌게)
+    expiry-grace-seconds: 120                 # 결제 대기 만료 정리(PendingExpiry) - ttl 뒤 2분 더 (주문 쪽 만료, Catalog 60초 주기가 먼저 돌게)
     expiry-interval-ms: 60000                 # 만료 정리 주기
-  toss:                                       # 시크릿 키는 /etc/secrets/toss.secret-key (test_… 만 — TossPaymentGateway)
+  toss:                                       # 시크릿 키는 /etc/secrets/toss.secret-key (test_... 만 - TossPaymentGateway)
     base-url: https://api.tosspayments.com
     connect-timeout-ms: 3000
-    read-timeout-ms: 10000                    # 승인 + 조회 최악 (3+10)×2 = 26초 < Concert paying-check-seconds(60) — 정리가 묻기 전에 승인 결과가 남습니다 (11/04 77A)
-    allow-test-code: false                    # X-Force-Decline 무시 (11/04 T4A) — 로컬 프로필만 true
+    read-timeout-ms: 10000                    # 승인 + 조회 최악 (3+10)*2 = 26초 < Concert paying-check-seconds(60) - 정리가 묻기 전에 승인 결과가 남습니다 (77A)
+    allow-test-code: false                    # X-Force-Decline 무시 (T4A) - 로컬 프로필만 true
   page:
     size: 20
     max-size: 50

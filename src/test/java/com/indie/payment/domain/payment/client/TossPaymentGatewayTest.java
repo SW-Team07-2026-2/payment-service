@@ -37,14 +37,14 @@ class TossPaymentGatewayTest {
     private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
     private final TossPaymentGateway gateway = new TossPaymentGateway(builder, BASE, KEY, true);
 
-    /** ★ 실결제 차단 — 라이브 키면 빈을 만들지 못해 Payment 가 기동하지 않습니다 */
+    /** 실결제 차단 - 라이브 키면 빈을 만들지 못해 Payment 가 기동하지 않습니다 */
     @Test
     void liveKeyIsRejected() {
         assertThatThrownBy(() -> new TossPaymentGateway(RestClient.builder(), BASE, "live_gsk_x", false))
                 .isInstanceOf(IllegalStateException.class);
     }
 
-    /** 시크릿 키 뒤에 콜론을 붙여 base64 · 본문은 우리 주문번호와 저장한 금액 */
+    /** 시크릿 키 뒤에 콜론을 붙여 base64, 본문은 우리 주문번호와 저장한 금액 */
     @Test
     void confirmApprovesOnDone() {
         String basic = Base64.getEncoder().encodeToString((KEY + ":").getBytes(StandardCharsets.UTF_8));
@@ -60,7 +60,7 @@ class TossPaymentGatewayTest {
         server.verify();
     }
 
-    /** X-Force-Decline → 토스 테스트 코드 헤더 → 토스가 그 에러를 재현 → 조회해도 승인 전 → 거절 (사유 = 토스 에러 코드) */
+    /** X-Force-Decline -> 토스 테스트 코드 헤더 -> 토스가 그 에러를 재현 -> 조회해도 승인 전 -> 거절 (사유 = 토스 에러 코드) */
     @Test
     void forcedDeclineBecomesDecline() {
         server.expect(requestTo(CONFIRM))
@@ -74,7 +74,7 @@ class TossPaymentGatewayTest {
         server.verify();
     }
 
-    /** ★ 운영(allowTestCode=false) — X-Force-Decline 을 보내도 토스 테스트 코드 헤더를 붙이지 않습니다 (11/04 T4A) */
+    /** 운영(allowTestCode=false) - X-Force-Decline 을 보내도 토스 테스트 코드 헤더를 붙이지 않습니다 (T4A) */
     @Test
     void testCodeIsIgnoredWhenNotAllowed() {
         RestClient.Builder prodBuilder = RestClient.builder();
@@ -89,7 +89,7 @@ class TossPaymentGatewayTest {
         prodServer.verify();
     }
 
-    /** ★ 승인 실패를 바로 단정하지 않습니다 — 토스가 이미 승인했으면 조회로 확인해 승인 */
+    /** 승인 실패를 바로 단정하지 않습니다 - 토스가 이미 승인했으면 조회로 확인해 승인 */
     @Test
     void failedConfirmButDoneAtTossIsApproved() {
         server.expect(requestTo(CONFIRM))
@@ -106,7 +106,7 @@ class TossPaymentGatewayTest {
         server.verify();
     }
 
-    /** 첫 요청이 아직 처리 중(409) — 조회해도 승인 전이면 거절이 아니라 503 (다시 부르면 첫 결과를 받음) */
+    /** 첫 요청이 아직 처리 중(409) - 조회해도 승인 전이면 거절이 아니라 503 (다시 부르면 첫 결과를 받음) */
     @Test
     void idempotentProcessingIsUnknownNotDecline() {
         server.expect(requestTo(CONFIRM))
@@ -121,7 +121,7 @@ class TossPaymentGatewayTest {
                 });
     }
 
-    /** 🔴 다른 주문의 승인된 paymentKey 를 보내도 우리 주문으로 승인하지 않습니다 */
+    /** 다른 주문의 승인된 paymentKey 를 보내도 우리 주문으로 승인하지 않습니다 */
     @Test
     void doneLookupForOtherOrderIsNotApproved() {
         server.expect(requestTo(CONFIRM))
@@ -142,7 +142,7 @@ class TossPaymentGatewayTest {
         assertThat(gateway.confirm("pk_1", "GOODS-1", 55000, null).approved()).isFalse();
     }
 
-    /** ★ 5xx · 타임아웃은 거절이 아니라 "모름" (503) — 같은 주문은 같은 멱등키라 다시 불러도 토스가 한 번만 처리합니다 */
+    /** 5xx, 타임아웃은 거절이 아니라 "모름" (503) - 같은 주문은 같은 멱등키라 다시 불러도 토스가 한 번만 처리합니다 */
     @Test
     void serverErrorIsUnknownAndRetrySendsSameIdempotencyKey() {
         List<String> keys = new ArrayList<>();
@@ -174,7 +174,7 @@ class TossPaymentGatewayTest {
         server.verify();
     }
 
-    /** 개발자센터에서 먼저 취소한 결제 — 이미 취소됐으면 성공으로 봅니다 (멱등) */
+    /** 개발자센터에서 먼저 취소한 결제 - 이미 취소됐으면 성공으로 봅니다 (멱등) */
     @Test
     void alreadyCanceledIsSuccess() {
         server.expect(requestTo(BASE + "/v1/payments/pk_1/cancel"))
@@ -184,7 +184,7 @@ class TossPaymentGatewayTest {
         assertThatCode(() -> gateway.cancel("pk_1", "USER_CANCEL")).doesNotThrowAnyException();
     }
 
-    /** 같은 결제의 앞선 취소가 처리 중(409) — 거절이 아니라 503 (환불 요청을 지우지 않아 복구가 다시 부름) */
+    /** 같은 결제의 앞선 취소가 처리 중(409) - 거절이 아니라 503 (환불 요청을 지우지 않아 복구가 다시 부름) */
     @Test
     void cancelStillProcessingIsUnknownNotRejected() {
         server.expect(requestTo(BASE + "/v1/payments/pk_1/cancel"))
@@ -207,7 +207,7 @@ class TossPaymentGatewayTest {
                         e -> assertThat(e.getErrorCode().getCode()).isEqualTo("PG_CANCEL_REJECTED"));
     }
 
-    /** 84A — 결과를 모르는 승인 정리용 조회. 토스에 있으면 상태 그대로 · 없으면(4xx) null · 불통이면 PG_UNAVAILABLE */
+    /** 84A - 결과를 모르는 승인 정리용 조회. 토스에 있으면 상태 그대로, 없으면(4xx) null, 불통이면 PG_UNAVAILABLE */
     @Test
     void findReturnsTossStatusOrNull() {
         expectLookup("{\"orderId\":\"TICKET-1\",\"status\":\"IN_PROGRESS\",\"method\":\"카드\",\"totalAmount\":55000}");

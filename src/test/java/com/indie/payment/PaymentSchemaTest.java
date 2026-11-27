@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 스키마 검증 — Flyway(V1 구조 · V2 값)로 스키마를 만들고 ddl-auto: validate 로 엔티티와 대조합니다 (어긋나면 컨텍스트 기동 실패).
+ * 스키마 검증 - Flyway(V1 구조, V2 값)로 스키마를 만들고 ddl-auto: validate 로 엔티티와 대조합니다 (어긋나면 컨텍스트 기동 실패).
  * Docker 가 없으면 건너뜁니다.
  */
 @Testcontainers(disabledWithoutDocker = true)
@@ -65,7 +65,7 @@ class PaymentSchemaTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired EntityManager em;
 
-    /** ★ 같은 주문의 두 번째 결제 행은 idempotency_key UNIQUE 에 걸립니다 (재결제 방지의 최종 방어선) */
+    /** 같은 주문의 두 번째 결제 행은 idempotency_key UNIQUE 에 걸립니다 (재결제 방지의 최종 방어선) */
     @Test
     void sameOrderCannotHaveTwoPayments() {
         UUID key = UUID.randomUUID();
@@ -75,7 +75,7 @@ class PaymentSchemaTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
-    /** ★ 80B — 거절 뒤 다시 준비하면 주문 하나에 결제 행이 둘. 승인 · 취소는 마지막 시도만 잠급니다 (native FOR UPDATE) */
+    /** 80B - 거절 뒤 다시 준비하면 주문 하나에 결제 행이 둘. 승인, 취소는 마지막 시도만 잠급니다 (native FOR UPDATE) */
     @Test
     void lockByOrderTakesLatestAttempt() {
         repository.save(new PaymentEntity(UUID.randomUUID(), "TICKET-a1", "TICKET", "9", 7L, 1000, null, OffsetDateTime.now()));
@@ -89,7 +89,7 @@ class PaymentSchemaTest {
         assertThat(repository.countByOrderTypeAndOrderRef("TICKET", "9")).isEqualTo(2);
     }
 
-    /** 11/17 환불 복구 — 환불 요청을 cutoff 전에 남긴 결제만 (요청 없는 행 · 방금 요청한 행은 제외) */
+    /** 환불 복구 - 환불 요청을 cutoff 전에 남긴 결제만 (요청 없는 행, 방금 요청한 행은 제외) */
     @Test
     void recoveryFindsOnlyStaleCancelRequests() {
         OffsetDateTime now = OffsetDateTime.now();
@@ -105,7 +105,7 @@ class PaymentSchemaTest {
                 .extracting(PaymentEntity::getPgOrderId).containsExactly("GOODS-r1");
     }
 
-    /** ✏️ 11/25 결제 대기 만료 정리 — cutoff 전에 준비했고 승인 요청이 없는 PENDING 만 (승인 요청 보낸 행 · 방금 준비한 행 · 끝난 행은 제외) */
+    /** 결제 대기 만료 정리 - cutoff 전에 준비했고 승인 요청이 없는 PENDING 만 (승인 요청 보낸 행, 방금 준비한 행, 끝난 행은 제외) */
     @Test
     void pendingExpiryFindsOnlyStaleUnrequestedPending() {
         OffsetDateTime now = OffsetDateTime.now();
@@ -123,7 +123,7 @@ class PaymentSchemaTest {
                 .extracting(PaymentEntity::getPgOrderId).containsExactly("TICKET-e1");
     }
 
-    /** ★ V2 의 CHECK 값 목록 = Java 쪽 값 — 한쪽만 고치면 여기서 깨집니다 */
+    /** V2 의 CHECK 값 목록 = Java 쪽 값 - 한쪽만 고치면 여기서 깨집니다 */
     @Test
     void checkConstraintValuesMatchJavaEnums() {
         assertThat(checkValues("ck_payment_status"))
