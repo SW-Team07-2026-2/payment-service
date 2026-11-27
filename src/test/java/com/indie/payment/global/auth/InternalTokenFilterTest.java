@@ -66,7 +66,7 @@ class InternalTokenFilterTest {
         assertThat(call(token(SECRET, "gateway", "payment", 300)).getStatus()).isEqualTo(401);
     }
 
-    /** ★ 발급자는 경로로 나뉩니다 — 관리자(studio) 토큰은 /internal/admin/** 만, 주문 서비스 토큰은 그 밖만 */
+    /** 발급자는 경로로 나뉩니다 - 관리자(studio) 토큰은 /internal/admin/** 만, 주문 서비스 토큰은 그 밖만 */
     @Test
     void adminPathsAcceptOnlyAdminIssuers() throws Exception {
         assertThat(call(token(SECRET, "studio", "payment", 300), "/internal/admin/payments/users/7").getStatus()).isEqualTo(200);
