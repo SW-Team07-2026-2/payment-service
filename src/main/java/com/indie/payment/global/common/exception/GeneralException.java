@@ -1,6 +1,6 @@
 package com.indie.payment.global.common.exception;
 
-/** 에러 코드로 던지는 예외 — GlobalExceptionHandler 가 ApiResponse 실패 응답으로 바꿉니다 */
+/** 에러 코드로 던지는 예외 - GlobalExceptionHandler 가 ApiResponse 실패 응답으로 바꿉니다 */
 public class GeneralException extends RuntimeException {
 
     private final BaseErrorCode errorCode;

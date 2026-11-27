@@ -17,9 +17,9 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Outbox → Kafka. 1초 간격으로 미발행 100건을 집어 발행하고 published_at 을 찍습니다.
+ * Outbox -> Kafka. 1초 간격으로 미발행 100건을 집어 발행하고 published_at 을 찍습니다.
  * 발행이 실패하면 그 지점에서 멈추고 다음 주기에 다시 시도합니다 (그 앞까지는 발행 완료로 커밋).
- * 봉투 — { eventId, type, version, occurredAt, payload } · 파티션 키 — payload.orderRef (같은 주문의 승인 · 취소 순서 보장)
+ * 봉투 - { eventId, type, version, occurredAt, payload }, 파티션 키 - payload.orderRef (같은 주문의 승인, 취소 순서 보장)
  */
 @Component
 public class OutboxRelay {
@@ -59,12 +59,12 @@ public class OutboxRelay {
                 row.markPublished(OffsetDateTime.now(clock));
             } catch (Exception e) {
                 log.warn("outbox_relay_failed eventId={} error={}", row.getEventId(), e.toString());
-                return;   // 다음 주기에 재시도 — 앞서 성공한 행은 커밋
+                return;   // 다음 주기에 재시도 - 앞서 성공한 행은 커밋
             }
         }
     }
 
-    /** 발행 완료 7일 경과 행 정리 — 없으면 테이블이 무한히 커집니다 */
+    /** 발행 완료 7일 경과 행 정리 - 없으면 테이블이 무한히 커집니다 */
     @Scheduled(cron = "0 0 4 * * SUN")
     @Transactional
     public void purge() {

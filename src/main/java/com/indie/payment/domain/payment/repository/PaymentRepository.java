@@ -9,17 +9,17 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * 결제 저장소 포트 — 구현은 PaymentJpaRepository.
- * lock* 은 상태 전이용 행 잠금 — confirm 과 cancel 이 동시에 와도 하나씩 처리됩니다.
+ * 결제 저장소 포트 - 구현은 PaymentJpaRepository.
+ * lock* 은 상태 전이용 행 잠금 - confirm 과 cancel 이 동시에 와도 하나씩 처리됩니다.
  */
 public interface PaymentRepository {
 
     Optional<PaymentEntity> findByIdempotencyKey(UUID idempotencyKey);
 
-    /** ✅ 소유권은 항상 조회 조건에 (IDOR) */
+    /** 소유권은 항상 조회 조건에 (IDOR) */
     Optional<PaymentEntity> findByIdAndUserId(Long id, Long userId);
 
-    /** 같은 주문의 마지막 결제 — 거절된 뒤 다시 준비하면 주문 하나에 결제 행이 늘어납니다 (11/04 80B) */
+    /** 같은 주문의 마지막 결제 - 거절된 뒤 다시 준비하면 주문 하나에 결제 행이 늘어납니다 (80B) */
     Optional<PaymentEntity> findFirstByOrderTypeAndOrderRefOrderByIdDesc(String orderType, String orderRef);
 
     long countByOrderTypeAndOrderRef(String orderType, String orderRef);
@@ -28,7 +28,7 @@ public interface PaymentRepository {
 
     List<PaymentEntity> findByUserIdAndIdLessThanOrderByIdDesc(Long userId, Long id, Limit limit);
 
-    /** IDENTITY 라 즉시 INSERT 됩니다 — idempotency_key 충돌은 이 호출에서 예외로 드러납니다 */
+    /** IDENTITY 라 즉시 INSERT 됩니다 - idempotency_key 충돌은 이 호출에서 예외로 드러납니다 */
     PaymentEntity save(PaymentEntity payment);
 
     Optional<PaymentEntity> lockByPgOrderId(String pgOrderId);
@@ -38,10 +38,10 @@ public interface PaymentRepository {
     /** 같은 주문의 마지막 결제를 잠급니다 */
     Optional<PaymentEntity> lockByOrder(String orderType, String orderRef);
 
-    /** 환불 복구 — 환불 요청을 cutoff 전에 남긴 채 끝나지 않은 결제 (오래된 것부터) */
+    /** 환불 복구 - 환불 요청을 cutoff 전에 남긴 채 끝나지 않은 결제 (오래된 것부터) */
     List<PaymentEntity> findByCancelRequestedAtBeforeOrderByCancelRequestedAtAsc(OffsetDateTime cutoff, Limit limit);
 
-    /** 결제 대기 만료 정리 — 승인 요청을 보낸 적 없이 cutoff 전에 준비한 결제 (오래된 것부터) */
+    /** 결제 대기 만료 정리 - 승인 요청을 보낸 적 없이 cutoff 전에 준비한 결제 (오래된 것부터) */
     List<PaymentEntity> findByStatusAndRequestedPaymentKeyIsNullAndRequestedAtBeforeOrderByRequestedAtAsc(
             PaymentEntity.Status status, OffsetDateTime cutoff, Limit limit);
 }

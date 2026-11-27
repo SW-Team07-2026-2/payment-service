@@ -13,8 +13,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 관리자(Studio) 전용 내부 API — X-Internal-Token 의 iss 가 admin-issuers(studio)일 때만 (InternalTokenFilter).
- * CS 관리자가 회원의 결제 내역을 봅니다. 조회만 있습니다 — 취소 · 환불은 주문 서비스(Catalog · Concert)의 관리자 취소가 Payment 를 부릅니다.
+ * Studio -> Payment 내부 관리자 API -> PaymentService 결제 내역 조회.
+ * 취소와 환불은 Catalog 또는 Concert의 주문 취소 경로에서 요청합니다.
  */
 @RestController
 public class InternalAdminPaymentController {
@@ -27,7 +27,13 @@ public class InternalAdminPaymentController {
         this.pageSize = pageSize;
     }
 
-    /** 회원의 결제 내역 — 최신순 커서 (내 결제 내역 P2 와 같은 모양) */
+    /**
+     * Studio에서 지정한 회원의 결제 내역을 최신순으로 조회합니다.
+     *
+     * @param userId 조회하거나 처리할 회원 ID
+     * @param cursor 다음 조회 시작점을 나타내는 커서
+     * @param size 페이지당 조회 개수
+     */
     @GetMapping("/internal/admin/payments/users/{userId}")
     public ApiResponse<CursorPage<PaymentView>> byUser(@PathVariable @Positive long userId,
                                                        @RequestParam(required = false) String cursor,

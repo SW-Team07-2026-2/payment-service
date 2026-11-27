@@ -8,18 +8,23 @@ import java.time.OffsetDateTime;
 import java.util.Base64;
 
 /**
- * 커서 — (시각, id) 복합 키를 base64url 로 감쌉니다. OFFSET 을 쓰지 않습니다
+ * 커서 - (시각, id) 복합 키를 base64url 로 감쌉니다. OFFSET 을 쓰지 않습니다
  * (뒤 페이지로 갈수록 느려지고, 새 활동이 들어오면 같은 항목이 두 페이지에 나타납니다).
- * at 이 없는 커서(id 단독)도 허용합니다 — 결제 내역.
+ * at 이 없는 커서(id 단독)도 허용합니다 - 결제 내역.
  */
 public record Cursor(OffsetDateTime at, long id) {
 
+    /** 커서 값을 Base64 URL 형식으로 인코딩합니다. */
     public String encode() {
         String raw = (at == null ? "" : at.toString()) + "|" + id;
         return Base64.getUrlEncoder().withoutPadding().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
     }
 
-    /** null · 빈 값이면 첫 페이지 (null 반환). 형식이 깨졌으면 400 */
+    /**
+     * null, 빈 값이면 첫 페이지 (null 반환). 형식이 깨졌으면 400
+     *
+     * @param value 디코딩할 커서 문자열
+     */
     public static Cursor decode(String value) {
         if (value == null || value.isBlank()) {
             return null;

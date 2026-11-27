@@ -29,14 +29,14 @@ public class OutboxEntity {
     private String payload;
 
     @Column(nullable = false, insertable = false, updatable = false)
-    @ColumnDefault("now()")                              // 로컬 ddl update 용 — OutboxAppender 가 created_at 을 넣지 않습니다
+    @ColumnDefault("now()")                              // 로컬 ddl update 용 - OutboxAppender 가 created_at 을 넣지 않습니다
     private OffsetDateTime createdAt;
 
     private OffsetDateTime publishedAt;                 // NULL = 미발행
 
     protected OutboxEntity() {}
 
-    /** 미발행 이벤트 1건 — payload 는 JSON 문자열 (jsonb 컬럼) */
+    /** 미발행 이벤트 1건 - payload 는 JSON 문자열 (jsonb 컬럼) */
     public static OutboxEntity pending(String eventType, String payload) {
         OutboxEntity e = new OutboxEntity();
         e.eventId = UUID.randomUUID();

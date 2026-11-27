@@ -18,10 +18,8 @@ import java.util.Base64;
 import java.util.UUID;
 
 /**
- * 토스페이먼츠 — 결제 승인 · 취소 (서버 API · 시크릿 키). 결제창 인증은 프론트가 SDK(클라이언트 키)로 합니다.
- * 🔴 테스트 키(test_…)만 받습니다 — 라이브 키면 기동하지 않습니다. 테스트 키 결제는 토스가 실제와 같은 흐름으로 승인하지만 돈은 나가지 않습니다.
- * 라이브 전환 때 이 검사를 지우세요.
- * 승인 · 취소에는 결제마다 고정된 Idempotency-Key 를 붙입니다 — 타임아웃 뒤 다시 불러도 토스는 첫 결과를 돌려줍니다 (15일).
+ * Payment -> 토스페이먼츠 서버 API로 승인, 취소, 조회를 요청합니다.
+ * 테스트 키만 허용하며 승인과 취소에는 결제별로 고정된 멱등키를 사용합니다.
  */
 @Component
 public class TossPaymentGateway implements PaymentGateway {
@@ -29,9 +27,9 @@ public class TossPaymentGateway implements PaymentGateway {
     private static final Logger log = LoggerFactory.getLogger(TossPaymentGateway.class);
 
     static final String IDEMPOTENCY_KEY = "Idempotency-Key";
-    /** 넣은 에러 코드를 그대로 재현합니다 (REJECT_CARD_PAYMENT …) — allowTestCode(로컬)일 때만 보냅니다 · 라이브 키면 토스가 무시합니다 */
+    /** 넣은 에러 코드를 그대로 재현합니다 (REJECT_CARD_PAYMENT ...) - allowTestCode(로컬)일 때만 보냅니다, 라이브 키면 토스가 무시합니다 */
     static final String TEST_CODE = "TossPayments-Test-Code";
-    /** 같은 멱등키의 첫 요청이 아직 처리 중 — 거절이 아니라 "모름" */
+    /** 같은 멱등키의 첫 요청이 아직 처리 중 - 거절이 아니라 "모름" */
     private static final String IDEMPOTENT_REQUEST_PROCESSING = "IDEMPOTENT_REQUEST_PROCESSING";
 
     private final RestClient rest;
@@ -49,17 +47,17 @@ public class TossPaymentGateway implements PaymentGateway {
         if (!key.startsWith("test_")) {
             throw new IllegalStateException("toss.secret-key 는 테스트 키(test_…)만 허용합니다 — 실결제 차단");
         }
-        String basic = Base64.getEncoder().encodeToString((key + ":").getBytes(StandardCharsets.UTF_8));   // ★ 끝의 콜론
+        String basic = Base64.getEncoder().encodeToString((key + ":").getBytes(StandardCharsets.UTF_8));   // 끝의 콜론
         this.rest = builder.baseUrl(baseUrl).defaultHeader(HttpHeaders.AUTHORIZATION, "Basic " + basic).build();
     }
 
     /**
-     * 200 + DONE 만 승인. 실패는 바로 단정하지 않고 결제를 조회해 다시 확인합니다 (토스 권장) — 이미 승인됐을 수 있습니다.
-     * 조회해도 승인이 아니면 4xx 는 거절(사유 = 토스 에러 코드), 처리 중(409) · 불통 · 5xx · 타임아웃은 결과를 모르므로 503
+     * 200 + DONE 만 승인. 실패는 바로 단정하지 않고 결제를 조회해 다시 확인합니다 (토스 권장) - 이미 승인됐을 수 있습니다.
+     * 조회해도 승인이 아니면 4xx 는 거절(사유 = 토스 에러 코드), 처리 중(409), 불통, 5xx, 타임아웃은 결과를 모르므로 503
      */
     @Override
     public ConfirmResult confirm(String paymentKey, String orderId, int amount, String testCode) {
-        String failure;   // 토스 에러 코드 — 불통 · 5xx · 타임아웃이면 null
+        String failure;   // 토스 에러 코드 - 불통, 5xx, 타임아웃이면 null
         try {
             Confirmed confirmed = rest.post().uri("/v1/payments/confirm")
                     .headers(h -> {
@@ -85,7 +83,7 @@ public class TossPaymentGateway implements PaymentGateway {
             if (confirmed.payment() != null) {
                 TossPayment payment = confirmed.payment();
                 if ("DONE".equals(payment.status())) return new ConfirmResult(true, payment.method(), null);
-                // 가상계좌(WAITING_FOR_DEPOSIT)처럼 승인이 나중에 끝나는 결제는 받지 않습니다 — 입금 웹훅이 없음
+                // 가상계좌(WAITING_FOR_DEPOSIT)처럼 승인이 나중에 끝나는 결제는 받지 않습니다 - 입금 웹훅이 없음
                 log.warn("toss_confirm_not_done orderId={} status={}", orderId, payment.status());
                 return new ConfirmResult(false, null, payment.status());
             }
@@ -95,13 +93,13 @@ public class TossPaymentGateway implements PaymentGateway {
             failure = null;
         }
 
-        // 🔴 클라이언트가 보낸 paymentKey 라 주문번호 · 금액이 우리 것과 같을 때만 승인으로 봅니다
+        // 클라이언트가 보낸 paymentKey 라 주문번호, 금액이 우리 것과 같을 때만 승인으로 봅니다
         TossPayment found = lookup(paymentKey);
         if (found != null && "DONE".equals(found.status()) && orderId.equals(found.orderId()) && found.totalAmount() == amount) {
             log.warn("toss_confirm_recovered orderId={} failure={}", orderId, failure);
             return new ConfirmResult(true, found.method(), null);
         }
-        if (failure == null) throw new GeneralException(PaymentErrorCode.PG_UNAVAILABLE);                       // 토스 불통 · 타임아웃
+        if (failure == null) throw new GeneralException(PaymentErrorCode.PG_UNAVAILABLE);                       // 토스 불통, 타임아웃
         if (IDEMPOTENT_REQUEST_PROCESSING.equals(failure)) throw new GeneralException(PaymentErrorCode.PG_PROCESSING);   // 첫 요청이 아직 처리 중
         return new ConfirmResult(false, null, failure);
     }
@@ -112,7 +110,7 @@ public class TossPaymentGateway implements PaymentGateway {
         return p == null ? null : new Found(p.orderId(), p.status(), p.method(), p.totalAmount());
     }
 
-    /** paymentKey 로 결제 조회 — 주문서형 시크릿 키(gsk)로는 orderId 조회를 부를 수 없습니다. 없으면 null · 불통이면 503 */
+    /** paymentKey 로 결제 조회 - 주문서형 시크릿 키(gsk)로는 orderId 조회를 부를 수 없습니다. 없으면 null, 불통이면 503 */
     private TossPayment lookup(String paymentKey) {
         try {
             return rest.get().uri("/v1/payments/{paymentKey}", paymentKey)
@@ -139,7 +137,7 @@ public class TossPaymentGateway implements PaymentGateway {
                             TossError error = res.bodyTo(TossError.class);
                             if (error != null && "ALREADY_CANCELED_PAYMENT".equals(error.code())) return null;   // 개발자센터에서 먼저 취소한 경우 등
                             if (error != null && IDEMPOTENT_REQUEST_PROCESSING.equals(error.code())) {
-                                // 같은 결제의 앞선 취소(재시도 · 복구)가 아직 처리 중 — 거절이 아니라 "모름" (거절로 보면 환불 요청을 지워 복구가 멈춤)
+                                // 같은 결제의 앞선 취소(재시도, 복구)가 아직 처리 중 - 거절이 아니라 "모름" (거절로 보면 환불 요청을 지워 복구가 멈춤)
                                 throw new GeneralException(PaymentErrorCode.PG_PROCESSING);
                             }
                             log.warn("toss_cancel_rejected paymentKey={} code={} message={}", paymentKey,
@@ -169,10 +167,10 @@ public class TossPaymentGateway implements PaymentGateway {
 
     record CancelRequest(String cancelReason) {}
 
-    /** Payment 객체 중 쓰는 필드만 — method 는 "카드" · "간편결제" … */
+    /** Payment 객체 중 쓰는 필드만 - method 는 "카드", "간편결제" ... */
     record TossPayment(String orderId, String status, String method, int totalAmount) {}
 
-    /** 승인 응답 — 2xx 면 payment, 4xx 면 errorCode */
+    /** 승인 응답 - 2xx 면 payment, 4xx 면 errorCode */
     private record Confirmed(TossPayment payment, String errorCode) {}
 
     record TossError(String code, String message) {}

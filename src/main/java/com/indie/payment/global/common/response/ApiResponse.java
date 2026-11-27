@@ -9,8 +9,8 @@ import org.slf4j.MDC;
 
 /**
  * 모든 HTTP 응답 본문의 공통 포맷 (Gateway 와 동일).
- * 성공 { isSuccess: true, code: "OK", message, result } · 실패 { isSuccess: false, code, message, result?, correlationId }.
- * result 가 없으면 키를 뺍니다. correlationId 는 실패 응답에만 — 로그에서 요청을 찾는 키입니다.
+ * 성공 { isSuccess: true, code: "OK", message, result }, 실패 { isSuccess: false, code, message, result?, correlationId }.
+ * result 가 없으면 키를 뺍니다. correlationId 는 실패 응답에만 - 로그에서 요청을 찾는 키입니다.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonPropertyOrder({"isSuccess", "code", "message", "result", "correlationId"})

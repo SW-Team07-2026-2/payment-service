@@ -16,7 +16,7 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-/** 모든 에러를 ApiResponse 실패 응답으로. 🔴 예외 메시지에 SQL · 스택트레이스를 노출하지 않습니다 */
+/** 모든 에러를 ApiResponse 실패 응답으로. 예외 메시지에 SQL, 스택트레이스를 노출하지 않습니다 */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 

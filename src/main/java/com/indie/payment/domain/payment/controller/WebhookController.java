@@ -20,9 +20,9 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
 /**
- * P5 — PG 웹훅 (15 §5.5). 토스 웹훅은 아직 연결하지 않아 자리만 둡니다 (승인 · 취소는 서버가 직접 호출해서 결과를 받음).
- * JWT 가 없는 대신 X-Signature = hex(HMAC-SHA256(공유 시크릿, 본문)) 를 검증합니다 (Gateway 는 이 경로만 인증 · CSRF 면제).
- * TODO(결정대기): 실제 PG 연동 시 — eventId 멱등 저장(PG 는 같은 웹훅을 여러 번 보냄) + 결제 상태 반영
+ * PG 웹훅 -> Gateway -> Payment의 HMAC 서명 검증.
+ * 현재 토스 웹훅은 연결되지 않았고 수신 로그만 남깁니다.
+ * TODO: 실제 연동 시 eventId 중복 처리와 결제 상태 반영을 추가합니다.
  */
 @RestController
 public class WebhookController {
@@ -35,6 +35,13 @@ public class WebhookController {
         this.secret = secret.trim().getBytes(StandardCharsets.UTF_8);
     }
 
+    /**
+     * 웹훅 본문의 HMAC 서명을 검증하고 수신 로그를 남깁니다.
+     *
+     * @param provider 웹훅을 보낸 PG 식별자
+     * @param signature 요청 본문을 검증할 HMAC 서명
+     * @param body 서명 검증에 사용할 원본 본문
+     */
     @PostMapping("/api/payments/webhook/{provider}")
     public ResponseEntity<Void> receive(@PathVariable String provider,
                                         @RequestHeader(value = "X-Signature", required = false) String signature,
@@ -48,7 +55,7 @@ public class WebhookController {
         return ResponseEntity.ok().build();
     }
 
-    /** 통과면 null — 아니면 사유 (응답은 INVALID_SIGNATURE 하나 · 사유는 로그로만) */
+    /** 통과면 null - 아니면 사유 (응답은 INVALID_SIGNATURE 하나, 사유는 로그로만) */
     String rejectReason(byte[] body, String signature) {
         if (signature == null || signature.isBlank()) return "missing";
         try {
@@ -56,7 +63,7 @@ public class WebhookController {
             mac.init(new SecretKeySpec(secret, "HmacSHA256"));
             byte[] expected = mac.doFinal(body);
             byte[] actual = HexFormat.of().parseHex(signature.trim().toLowerCase());
-            return MessageDigest.isEqual(expected, actual) ? null : "mismatch";           // ★ 상수 시간 비교
+            return MessageDigest.isEqual(expected, actual) ? null : "mismatch";           // 상수 시간 비교
         } catch (IllegalArgumentException e) {
             return "malformed";   // 16진수가 아님
         } catch (GeneralSecurityException e) {

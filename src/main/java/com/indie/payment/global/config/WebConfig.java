@@ -28,7 +28,7 @@ public class WebConfig implements WebMvcConfigurer {
         resolvers.add(currentUserArgumentResolver);
     }
 
-    /** /internal/** 에만 건다 — /actuator/** 는 대상이 아닙니다 */
+    /** /internal/** 에만 건다 - /actuator/** 는 대상이 아닙니다 */
     @Bean
     public FilterRegistrationBean<InternalTokenFilter> internalTokenFilter(@Value("${internal.shared-secret}") String sharedSecret,
                                                                            PaymentProperties props, Clock clock,

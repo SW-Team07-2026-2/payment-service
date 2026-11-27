@@ -15,8 +15,8 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * payment — 상태 전이 PENDING → APPROVED | DECLINED | CANCELLED, APPROVED → CANCELLED(환불).
- * 전이는 행 잠금(SELECT ... FOR UPDATE) 안에서만 합니다 — confirm 과 cancel 이 동시에 와도 하나만 이깁니다.
+ * payment - 상태 전이 PENDING -> APPROVED | DECLINED | CANCELLED, APPROVED -> CANCELLED(환불).
+ * 전이는 행 잠금(SELECT ... FOR UPDATE) 안에서만 합니다 - confirm 과 cancel 이 동시에 와도 하나만 이깁니다.
  */
 @Entity
 @Table(name = "payment")
@@ -31,22 +31,22 @@ public class PaymentEntity {
     @Column(unique = true, nullable = false)
     private UUID idempotencyKey;
 
-    /** 토스 orderId — prepare 때 우리가 만듭니다 (6~64자 · 영숫자 - _) */
+    /** 토스 orderId - prepare 때 우리가 만듭니다 (6~64자, 영숫자 - _) */
     @Column(unique = true, nullable = false, length = 64)
     private String pgOrderId;
 
-    /** 토스가 결제창 인증 뒤 발급 — 승인에 성공했을 때만 채웁니다 (취소 · 조회의 식별자) */
+    /** 토스가 결제창 인증 뒤 발급 - 승인에 성공했을 때만 채웁니다 (취소, 조회의 식별자) */
     @Column(unique = true, length = 200)
     private String paymentKey;
 
-    /** 승인 요청에 쓴 paymentKey — 토스를 부르기 전에 남깁니다. 결과를 모를 때 정리가 이 키로 조회합니다 (11/04 84A · 검증 전 값이라 UNIQUE 아님) */
+    /** 승인 요청에 쓴 paymentKey - 토스를 부르기 전에 남깁니다. 결과를 모를 때 정리가 이 키로 조회합니다 (84A, 검증 전 값이라 UNIQUE 아님) */
     @Column(length = 200)
     private String requestedPaymentKey;
 
-    /** 진행 중인 환불 요청 (11/17) — 토스 취소를 부르기 전에 남기고 끝나면 지웁니다. 남아 있으면 복구(CancelRecovery)가 이어서 끝냅니다 */
+    /** 진행 중인 환불 요청 - 토스 취소를 부르기 전에 남기고 끝나면 지웁니다. 남아 있으면 복구(CancelRecovery)가 이어서 끝냅니다 */
     private OffsetDateTime cancelRequestedAt;
 
-    /** 그 환불 요청의 사유 — 처음 사유를 유지합니다 (토스 취소 멱등키가 결제마다 같아 첫 요청이 기준) */
+    /** 그 환불 요청의 사유 - 처음 사유를 유지합니다 (토스 취소 멱등키가 결제마다 같아 첫 요청이 기준) */
     private String cancelReason;
 
     private String orderType;
@@ -111,7 +111,7 @@ public class PaymentEntity {
         clearCancelRequest();
     }
 
-    /** 요청할 때마다 시각을 새로 찍습니다 — 복구는 이 시각이 오래된 것만 집습니다 (진행 중인 요청과 겹치지 않게) */
+    /** 요청할 때마다 시각을 새로 찍습니다 - 복구는 이 시각이 오래된 것만 집습니다 (진행 중인 요청과 겹치지 않게) */
     public void requestCancel(String reason, OffsetDateTime now) {
         if (this.cancelReason == null) this.cancelReason = truncate(reason);
         this.cancelRequestedAt = now;
