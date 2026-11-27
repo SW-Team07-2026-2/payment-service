@@ -14,7 +14,7 @@ import java.io.IOException;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-/** Gateway 가 붙인 X-Correlation-Id 를 MDC 에 올립니다 (없으면 생성 — 내부 호출 · 직접 호출 대비) */
+/** Gateway 가 붙인 X-Correlation-Id 를 MDC 에 올립니다 (없으면 생성 - 내부 호출, 직접 호출 대비) */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class CorrelationIdFilter extends OncePerRequestFilter {

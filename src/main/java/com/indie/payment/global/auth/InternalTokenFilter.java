@@ -25,15 +25,8 @@ import java.util.Date;
 import java.util.List;
 
 /**
- * /internal/** 전용 — X-Internal-Token (HS256 · 공유 시크릿) 검증 (Member 명세 §13 과 동일 · aud = payment).
- * <pre>
- * ① 헤더 없음 → 401 INTERNAL_TOKEN_REQUIRED   ② 서명 · ③ iss/aud · exp 없음 → 401 INTERNAL_TOKEN_INVALID (사유는 로그)
- * ④ exp(+30초) 지남 → 401 INTERNAL_TOKEN_EXPIRED
- * ⑤ 발급자는 경로로 나눕니다 — /internal/admin/** 는 admin-issuers(studio)만, 그 밖은 allowed-issuers(catalog · concert)만.
- *   관리자 토큰으로 결제 준비 · 취소를 부를 수 없고, 주문 서비스 토큰으로 관리자 조회를 부를 수 없습니다.
- * </pre>
- * 🔴 이 필터 없이 배포되면 클러스터 안의 누구든 금액을 정해 결제를 준비 · 취소할 수 있습니다.
- * 🔴 X-User-Id 를 신뢰하지 않습니다 — 내부 API 의 사용자 식별은 요청 본문 값으로 합니다.
+ * 내부 API의 HS256 토큰 서명, 발급자, 대상(payment), 만료 시각을 검증합니다.
+ * Studio는 관리자 경로만, Catalog와 Concert는 주문 연동 경로만 허용합니다.
  */
 public class InternalTokenFilter extends OncePerRequestFilter {
 
@@ -74,11 +67,11 @@ public class InternalTokenFilter extends OncePerRequestFilter {
         chain.doFilter(request, response);
     }
 
-    /** 통과면 null — 아니면 거절 사유 (expired 만 응답 코드가 다르고 나머지는 로그로만 구분) */
+    /** 통과면 null - 아니면 거절 사유 (expired 만 응답 코드가 다르고 나머지는 로그로만 구분) */
     private String check(String token, boolean adminPath) {
         try {
             SignedJWT jwt = SignedJWT.parse(token);
-            if (!JWSAlgorithm.HS256.equals(jwt.getHeader().getAlgorithm())) return "alg";   // ★ alg 고정
+            if (!JWSAlgorithm.HS256.equals(jwt.getHeader().getAlgorithm())) return "alg";   // alg 고정
             if (!jwt.verify(verifier)) return "signature";
             JWTClaimsSet claims = jwt.getJWTClaimsSet();
             List<String> issuers = adminPath ? props.adminIssuers() : props.allowedIssuers();

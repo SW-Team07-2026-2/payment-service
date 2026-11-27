@@ -3,7 +3,7 @@ package com.indie.payment.domain.payment.exception;
 import com.indie.payment.global.common.exception.BaseErrorCode;
 import org.springframework.http.HttpStatus;
 
-/** 결제 에러 코드 — code 는 enum 이름 그대로 응답에 나갑니다 */
+/** 결제 에러 코드 - code 는 enum 이름 그대로 응답에 나갑니다 */
 public enum PaymentErrorCode implements BaseErrorCode {
 
     AMOUNT_MISMATCH(HttpStatus.BAD_REQUEST, "결제 금액이 주문 금액과 다릅니다"),
@@ -18,7 +18,7 @@ public enum PaymentErrorCode implements BaseErrorCode {
     INVALID_SIGNATURE(HttpStatus.UNAUTHORIZED, "서명이 올바르지 않습니다"),
     PG_CANCEL_REJECTED(HttpStatus.BAD_GATEWAY, "결제사가 취소를 거절했습니다"),
     PG_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "결제사 응답이 없습니다. 잠시 후 결제 내역을 확인해주세요"),
-    PG_PROCESSING(HttpStatus.SERVICE_UNAVAILABLE, "결제사가 아직 처리 중입니다. 잠시 후 결제 내역을 확인해주세요");   // 🔴 5xx 유지 — 호출자가 승인 여부 모름(Unavailable)으로 다뤄야 함
+    PG_PROCESSING(HttpStatus.SERVICE_UNAVAILABLE, "결제사가 아직 처리 중입니다. 잠시 후 결제 내역을 확인해주세요");   // 5xx 유지 - 호출자가 승인 여부 모름(Unavailable)으로 다뤄야 함
 
     private final HttpStatus status;
     private final String message;
